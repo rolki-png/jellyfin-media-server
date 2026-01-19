@@ -65,6 +65,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
+      - /mnt/samsung-media:/mnt/samsung-media
       - ${COMMON_PATH}/configs/sonarr:/config
       - ${COMMON_PATH}/sonarr/tv:/tv
       - ${COMMON_PATH}/qbittorrent/downloads:/downloads
@@ -106,6 +107,8 @@ services:
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
       - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
+    devices:
+      - /dev/dri:/dev/dri
     restart: unless-stopped
   jellyseerr:
     image: fallenbagel/jellyseerr:latest
@@ -117,4 +120,15 @@ services:
       - 5055:5055
     volumes:
       - ${COMMON_PATH}/configs/jellyseerr:/app/config
+    restart: unless-stopped
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    environment:
+      - TZ=${TZ}
+    ports:
+      - 9000:9000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${COMMON_PATH}/configs/portainer:/data
     restart: unless-stopped

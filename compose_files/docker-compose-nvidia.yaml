@@ -126,3 +126,33 @@ services:
     volumes:
       - ${COMMON_PATH}/configs/jellyseerr:/app/config
     restart: unless-stopped
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+      - VERSION=docker
+      - PLEX_CLAIM=${PLEX_CLAIM:-}
+      - NVIDIA_VISIBLE_DEVICES=all
+    ports:
+      - 32400:32400
+      - 32400:32400/udp
+      - 32469:32469
+      - 32469:32469/udp
+    volumes:
+      - ${COMMON_PATH}:${COMMON_PATH}
+      - ${COMMON_PATH}/configs/plex:/config
+      - ${COMMON_PATH}/plex/transcode:/transcode
+      - ${COMMON_PATH}/sonarr/tv:/data/tvshows
+      - ${COMMON_PATH}/radarr/movies:/data/movies
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
