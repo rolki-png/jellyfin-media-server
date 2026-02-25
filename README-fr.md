@@ -204,13 +204,13 @@ sh get-docker.sh
 Pour utiliser Docker Compose avec ce dépôt, vous devez d'abord choisir si vous souhaitez utiliser la version avec VPN ou sans VPN. Ensuite, naviguez vers le répertoire correspondant (avec-vpn ou sans-vpn) et exécutez la commande suivante :
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Pour arrêter la stack :
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 **[`^        retour au sommaire        ^`](#table-des-matières)**
@@ -572,12 +572,18 @@ cd All-jellyfin-media-server/
 
 Pour l'installation, j'ai créé uniquement trois versions du fichier `docker-compose`.
 
-Avant de procéder, rendez-vous dans le fichier `.env` situé dans le répertoire `compose_files/` et complétez-le avec les informations nécessaires. Ce fichier doit toujours être à la racine du fichier `docker-compose` que vous allez lancer.
+Avant de procéder, copiez `.env.example` vers `.env` dans le répertoire `compose_files/`, puis complétez les informations nécessaires. Ce fichier doit toujours être à la racine du fichier `docker-compose` que vous allez lancer.
+
+```bash
+cp compose_files/.env.example compose_files/.env
+```
 
 ```yaml
 # BASE
 COMMON_PATH=/VOTRE_CHEMIN/Isyrr
 TZ=Europe/Paris
+PUID=1000
+PGID=1000
 
 # Décommentez les lignes ci-dessous pour activer la configuration VPN correspondante
 
@@ -593,6 +599,12 @@ TZ=Europe/Paris
 # DNS_ADDRESS=Interface_DNS  # L'adresse DNS pour ProtonVPN
 # PUBLIC_KEY=Clef_Publique_PEER  # La clé publique de l'autre pair
 # PRIVATE_KEY=Clef_Privée_Interface  # Votre clé privée
+```
+
+Validez ensuite la configuration avant de démarrer les conteneurs :
+
+```bash
+bash compose_files/validate.sh
 ```
 
 > [!WARNING]  
@@ -690,7 +702,10 @@ Gluetun (Nord VPN) sera automatiquement configuré pour être utilisé avec les 
     <img src="image/qBittorrent/qbit1.png" style="margin: 15px 10px;">
 </div>
 
-   *Remarque : Les identifiants par défaut peuvent avoir changé. Veuillez consulter la documentation pour les mises à jour à ce sujet. Dans la plupart des cas, l'interface Web de qBittorrent générera un mot de passe temporaire au démarrage du conteneur. Pour afficher ce mot de passe, consultez les journaux de ce conteneur avec la commande : `docker logs qbittorrent`*
+   *Remarque : Les identifiants par défaut peuvent avoir changé. Veuillez consulter la documentation pour les mises à jour à ce sujet. Dans la plupart des cas, l'interface Web de qBittorrent générera un mot de passe temporaire au démarrage du conteneur. Pour afficher ce mot de passe, consultez les journaux de ce conteneur avec la commande : `docker compose logs qbittorrent`*
+
+> [!WARNING]
+> Modifiez les identifiants par défaut de qBittorrent immédiatement après la première connexion.
 
 3. Une fois connecté, cliquez sur l'icône d'engrenage pour accéder aux **Options**.
 4. Sous l'onglet **Téléchargements**, configurez les paramètres de sauvegarde comme suit :
@@ -983,11 +998,11 @@ Si vous souhaitez que d'autres utilisateurs aient accès à votre serveur Jellyf
 Pour mettre à jour les applications, vous devez d'abord arrêter les conteneurs en cours d'exécution et supprimer les images Docker existantes. Vous pouvez utiliser les commandes suivantes pour effectuer ces opérations :
 
 ```bash
-docker-compose down
+docker compose down
 docker image prune -a
 ```
 
-Ensuite, vous pouvez exécuter `docker-compose up -d` pour redémarrer les conteneurs avec les dernières versions des applications.
+Ensuite, vous pouvez exécuter `docker compose up -d` pour redémarrer les conteneurs avec les dernières versions des applications.
 
 **[`^        retour au sommaire        ^`](#table-des-matières)**
 

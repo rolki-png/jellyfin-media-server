@@ -182,12 +182,12 @@ sh get-docker.sh
 To use Docker Compose with this repository, you first need to choose whether you want to use the version with VPN or without VPN. Then, navigate to the corresponding directory (with-vpn or without-vpn) and run the following command :
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 To shut down the stack :
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 **[`^        back to top        ^`](#table-of-contents)**
@@ -467,12 +467,24 @@ git clone https://github.com/Morzomb/All-jellyfin-media-server.git
 cd All-jellyfin-media-server/
 ```
 
-Before proceeding, navigate to the `.env` file located in the `compose_files/` directory and complete it with the required information.
+Before proceeding, copy `.env.example` into `.env` in the `compose_files/` directory, then update the values for your machine:
+
+```bash
+cp compose_files/.env.example compose_files/.env
+```
 
 ```yaml
 # BASE
 COMMON_PATH=/YOUR_PATH/Isyrr
 TZ=Europe/Paris
+PUID=1000
+PGID=1000
+```
+
+Validate the stack configuration before starting containers:
+
+```bash
+bash compose_files/validate.sh
 ```
 
 To start the installation, execute:
@@ -524,7 +536,10 @@ Once the applications are deployed, you can access them using the following addr
     <img src="image/qBittorrent/qbit1.png" style="margin: 15px 10px;">
 </div>
 
-   *Note: The default credentials may have changed, please check the documentation for updates on this. In most cases, qBittorrent Web UI will generate a temporary password when the container is started. To view this password, check the logs for this container with the command: `docker logs qbittorrent`*
+   *Note: The default credentials may have changed, please check the documentation for updates on this. In most cases, qBittorrent Web UI will generate a temporary password when the container is started. To view this password, check container logs with: `docker compose logs qbittorrent`*
+
+> [!WARNING]
+> Change the qBittorrent default credentials immediately after first login.
 
 1. Once logged in, click the gear icon to go to **Options**.
 2. Under the **Downloads** tab, configure the backup settings as follows:
@@ -815,11 +830,11 @@ If you want other users to access your Jellyfin server, you can create additiona
 To update the applications, you need to stop the running containers and remove the existing Docker images. You can use the following commands to perform these operations:
 
 ```bash
-docker-compose down
+docker compose down
 docker image prune -a
 ```
 
-Then, you can run `docker-compose up -d` to restart the containers with the latest versions of the applications.
+Then, you can run `docker compose up -d` to restart the containers with the latest versions of the applications.
 
 **[`^        back to top        ^`](#table-of-contents)**
 
