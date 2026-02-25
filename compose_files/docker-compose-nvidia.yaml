@@ -106,6 +106,8 @@ services:
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
       - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
+    devices:
+      - /dev/dri:/dev/dri
     restart: unless-stopped
     deploy:
       resources:

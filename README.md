@@ -5,7 +5,7 @@
 </div>
 
 
-Welcome to the All-jellyfin-media-server Repository! This repository contains everything you need to create your own Jellyfin media server with Sonarr, Radarr, Jellyseerr, Prowlarr, Jackett, qBittorrent, and Gluetun (VPN) in a Docker Compose setup. We'll refer to the compilation of all containers as **Isyrr** to keep it simple.
+Welcome to the All-jellyfin-media-server Repository! This repository contains everything you need to create your own media server with Jellyfin, Plex, Sonarr, Radarr, Jellyseerr, Prowlarr, Jackett, qBittorrent, and FlareSolverr in a Docker Compose setup with NVIDIA GPU support for hardware transcoding.
 
 ![](https://img.shields.io/github/stars/Morzomb/All-jellyfin-media-server.svg)
 ![](https://img.shields.io/github/forks/Morzomb/All-jellyfin-media-server.svg)
@@ -31,7 +31,6 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
     - [**Flaresolverr**](#flaresolverr)
     - [**Prowlarr**](#prowlarr)
     - [**qBittorrent**](#qbittorrent)
-    - [**Gluetun (VPN)**](#gluetun-vpn)
 - [**Prerequisites**](#prerequisites)
   - [**Docker**](#docker)
     - [**Using Docker Compose :**](#using-docker-compose-)
@@ -39,15 +38,7 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
     - [**First Method**](#first-method)
   - [**Final Verification**](#final-verification)
   - [**Second Method**](#second-method)
-- [**VPN**](#vpn)
-  - [**NORD**](#nord)
-  - [**PROTON**](#proton)
-  - [**Troubleshoot VPN**](#troubleshoot-vpn)
 - [**Installation**](#installation)
-  - [**1. Basic Installation**](#1-basic-installation)
-  - [**2. Installation with NVIDIA Only**](#2-installation-with-nvidia-only)
-  - [**3. Installation with NVIDIA and VPN**](#3-installation-with-nvidia-and-vpn)
-  - [**4. Installation with VPN (no-Nvidia)**](#4-installation-with-vpn-no-nvidia)
 - [**Accessing Applications**](#accessing-applications)
 - [**Configuration Guide for Web Interfaces Only**](#configuration-guide-for-web-interfaces-only)
   - [**qBittorrent**](#qbittorrent-1)
@@ -79,7 +70,7 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
 
 This repository allows you to create your own Jellyfin media server with all the necessary tools to manage your movies, TV shows, music, and eBooks. It also includes tools to automate the downloading of new content and to protect your privacy using a VPN.
 
-Isyrr uses Docker and Docker Compose to deploy the services. Docker Compose files can be found in the directories with-vpn and without-vpn.
+This setup uses Docker and Docker Compose to deploy the services.
 
 > [!IMPORTANT]  
 > To use Docker Compose, make sure Docker is installed on your system.
@@ -149,19 +140,6 @@ Isyrr uses Docker and Docker Compose to deploy the services. Docker Compose file
 
 <div style="text-align: center">
     <img src="https://a.fsdn.com/allura/p/qbittorrent/icon?1518743661?&w=90" width="100" height="100" style="margin: 15px 10px;">
-</div>
-
-### **Gluetun (VPN)**
-
-[Gluetun](https://github.com/qdm12/gluetun) is open-source VPN client software that allows you to connect to VPN servers. It is easy to use and supports many advanced features such as port forwarding, DNS leak protection, and support for multiple VPN protocols.
-
-<div style="text-align: center">
-  <img src="https://raw.githubusercontent.com/qdm12/gluetun/master/title.svg" width="300" height="200" style="margin: 15px 10px;">
-</div>
-
-<div style="text-align: center">
-    <img src="https://m.media-amazon.com/images/I/51gvJaXQh4L.png" width="200" height="200" style="margin-right: 10px;">
-    <img src="https://m.media-amazon.com/images/I/31o0QB0R0sL.png" width="200" height="200" style="margin-left: 10px;">
 </div>
 
 ---
@@ -479,169 +457,35 @@ cd nvidia-patch
 
 **[`^        back to top        ^`](#table-of-contents)**
 
-# **VPN**
-
-Now we will see how to set up the VPN. Personally, I will use ProtonVPN and NordVPN, but you can find a number of other VPN providers as well [HERE](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers).
-
-## **NORD**
-
-First, you need to connect to the Nord VPN website.
-
-1. Go to Nord VPN services :
-
-<div style="text-align: center">
-    <img src="image/vpn/vpn1.png" style="margin: 15px 10px;">
-</div>
-
-2. Select manual configuration of NordVPN :
-
-<div style="text-align: center">
-    <img src="image/vpn/vpn2.png" style="margin: 15px 10px;">
-</div>
-
-3. You can now take your login and password for the gluetun container :
-
-<div style="text-align: center">
-    <img src="image/vpn/vpn3.png" style="margin: 15px 10px;">
-</div>
-
----
-
-## **PROTON**
-
-Go to [Protont VPN](https://account.protonvpn.com/downloads) website.
-
-1. Go to Download :
-
-<div style="text-align: center">
-    <img src="image/vpn/pro1.png" style="margin: 15px 10px;">
-</div>
-
-2. Configure your VPN manually with an OS name to use, and make sure to enable NAT-PMP. Finally, select the desired country :
-
-<div style="text-align: center">
-    <img src="image/vpn/pro2.png" style="margin: 15px 10px;">
-</div>
-
-3. You can now gather your information for the Gluetun container setup :
-
-<div style="text-align: center">
-    <img src="image/vpn/pro3.png" style="margin: 15px 10px;">
-</div>
-
-> [!CAUTION]  
-> Make sure you have either downloaded the file or copied its content into a text file, as some information will no longer be available after you click "Close".
-
-## **Troubleshoot VPN** 
-
-Once the Docker is launched, you can test your VPN with the following command :
-
-```bash
-docker exec qbittorrent curl -s https://api.ipify.org/
-# Result
-94.101.115.63
-```
-
-On my side, it shows me an IP address in Belgium :
-
-<div style="text-align: center">
-    <img src="image/vpn/vpn4.png" style="margin: 15px 10px;">
-</div>
-
-**[`^        back to top        ^`](#table-of-contents)**
-
----
 
 # **Installation**
 
-First, clone the repository :
+First, clone the repository:
 
 ```bash
 git clone https://github.com/Morzomb/All-jellyfin-media-server.git
 cd All-jellyfin-media-server/
 ```
 
-For the installation, I have only created three versions of the `docker-compose` file.
-
-Before proceeding, navigate to the `.env` file located in the `compose_files/` directory and complete it with the required information. This file must always be at the root of the `docker-compose` file you are going to launch.
+Before proceeding, navigate to the `.env` file located in the `compose_files/` directory and complete it with the required information.
 
 ```yaml
 # BASE
 COMMON_PATH=/YOUR_PATH/Isyrr
 TZ=Europe/Paris
-
-# Uncomment the lines below to enable the corresponding VPN configuration
-
-# NORD VPN
-# OPENVPN_USER=username  # Your username for NordVPN
-# OPENVPN_PASSWORD=password  # Your password for NordVPN
-# SERVER_REGIONS=Belgium  # Choose the server region (Belgium here)
-
-# PROTON VPN 
-# ENDPOINT_IP=PEER_ENDPOINT_IP  # The endpoint IP address of the VPN server
-# WIREGUARD_ADDR=Interface_Address  # The WireGuard interface address
-# ENDPOINT_PORT=51820  # Default port is 51820, but confirm if different
-# DNS_ADDRESS=Interface_DNS  # DNS address for ProtonVPN
-# PUBLIC_KEY=PEER_PublicKey  # The public key of the other peer
-# PRIVATE_KEY=Interface_PrivateKey  # Your private key
 ```
 
-> [!WARNING]  
-> Make sure you uncomment and configure the settings according to the VPN service you're using. This step is essential for establishing a proper VPN connection.
-
-## **1. Basic Installation**
-
-Standard installation without a `VPN` or `NVIDIA`:
-
-To start the installation, execute :
-
-```bash
-cd compose_files/
-docker compose -f docker-compose.yaml up -d
-```
-[Go to the file here](compose_files/docker-compose.yaml)
-
-## **2. Installation with NVIDIA Only**
-
-Standard installation with `NVIDIA` but without a `VPN`:
-
-To start the installation, execute :
+To start the installation, execute:
 
 ```bash
 cd compose_files/
 docker compose -f docker-compose-nvidia.yaml up -d
 ```
+
 [Go to the file here](compose_files/docker-compose-nvidia.yaml)
 
-## **3. Installation with NVIDIA and VPN**
-
-> [!WARNING]  
-> If you use this method, fill in the `.env` file located in `compose_files/VPN-nvidia`.
-
-Standard installation with both `VPN` and `NVIDIA`:
-
-To start the installation, execute :
-
-```bash
-cd compose_files/VPN-nvidia/
-docker compose -f docker-compose-<YOUR_VPN>-vpn.yaml up -d
-```
-[Go to the file here](compose_files/VPN-Nvidia/)
-
-## **4. Installation with VPN (no-Nvidia)**
-
-> [!WARNING]  
-> If you use this method, fill in the `.env` file located in `compose_files/VPN`.
-
-Standard installation with a `VPN`:
-
-To start the installation, execute :
-
-```bash
-cd compose_files/VPN/
-docker compose -f docker-compose-<YOUR_VPN>-vpn.yaml up -d
-```
-[Go to the file here](compose_files/VPN-Only/)
+> [!NOTE]
+> This setup includes NVIDIA GPU support for hardware transcoding in Jellyfin and Plex.
 
 **[`^        back to top        ^`](#table-of-contents)**
 
@@ -654,14 +498,14 @@ Once the applications are deployed, you can access them using the following addr
 
 
 * Jellyfin : http://localhost:8096
-* Jellyseer : http://localhost:5055
+* Plex : http://localhost:32400/web
+* Jellyseerr : http://localhost:5055
 * Sonarr : http://localhost:8989
 * Radarr : http://localhost:7878
 * Jackett : http://localhost:9117
 * Prowlarr : http://localhost:9696
 * qBittorrent : http://localhost:8080
-
-Gluetun (Nord VPN) will be automatically configured to be used with the applications.
+* FlareSolverr : http://localhost:8191
 
 # **Configuration Guide for Web Interfaces Only**
 
