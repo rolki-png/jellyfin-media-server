@@ -1,6 +1,4 @@
 ---
-version: "3.3"
-
 x-service-defaults: &service-defaults
   restart: unless-stopped
   logging:
