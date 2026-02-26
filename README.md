@@ -68,7 +68,7 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
 
 ## **What is Isyrr for?**
 
-This repository allows you to create your own Jellyfin media server with all the necessary tools to manage your movies, TV shows, music, and eBooks. It also includes tools to automate the downloading of new content and to protect your privacy using a VPN.
+This repository allows you to create your own Jellyfin media server with all the necessary tools to manage your movies, TV shows, music, and eBooks. It also includes tools to automate the downloading of new content.
 
 This setup uses Docker and Docker Compose to deploy the services.
 
@@ -179,7 +179,7 @@ sh get-docker.sh
 
 ### **Using Docker Compose :**
 
-To use Docker Compose with this repository, you first need to choose whether you want to use the version with VPN or without VPN. Then, navigate to the corresponding directory (with-vpn or without-vpn) and run the following command :
+To use Docker Compose with this repository, navigate to the `compose_files/` directory and run the following command:
 
 ```bash
 docker compose up -d
