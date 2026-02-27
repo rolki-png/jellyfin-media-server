@@ -479,6 +479,10 @@ COMMON_PATH=/YOUR_PATH/Isyrr
 TZ=Europe/Paris
 PUID=1000
 PGID=1000
+
+# Jellyfin compatibility (default root runtime)
+JELLYFIN_PUID=0
+JELLYFIN_PGID=0
 ```
 
 Validate the stack configuration before starting containers:

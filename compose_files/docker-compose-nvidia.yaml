@@ -95,6 +95,9 @@ services:
     container_name: jellyfin
     environment:
       <<: *linuxserver-env
+      # Keep Jellyfin root by default to avoid permission regressions on existing installs.
+      PUID: ${JELLYFIN_PUID:-0}
+      PGID: ${JELLYFIN_PGID:-0}
       NVIDIA_VISIBLE_DEVICES: all
     ports:
       - 8096:8096
