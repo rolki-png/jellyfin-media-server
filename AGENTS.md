@@ -46,6 +46,10 @@ Plex is optional and can also be started via `docker-compose-no-gpu.yaml` if nee
 
 See `README.md` section "Accessing Applications" for the full port list. Key services: Jellyfin `:8096`, Sonarr `:8989`, Radarr `:7878`, Prowlarr `:9696`, qBittorrent `:8080`.
 
+### Keeping containers up to date
+
+Watchtower runs as part of the stack and automatically pulls and redeploys containers when new images are published (default: every 24 h, configurable via `WATCHTOWER_POLL_INTERVAL` in `.env`). For on-demand updates, use `bash compose_files/update.sh` (see `--help` for options). See the README "Updating Applications" section for full details.
+
 ### Gotchas
 
 - Docker must be started manually in DinD environments: `sudo dockerd &>/tmp/dockerd.log &` (wait ~3s before running compose commands).

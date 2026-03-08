@@ -1,7 +1,7 @@
 ---
-# Override to run Jellyfin and Plex without NVIDIA GPU.
+# Standalone compose file to run Jellyfin, Plex, and Watchtower without NVIDIA GPU.
 # Usage:
-#   docker compose -f docker-compose-nvidia.yaml -f docker-compose-no-gpu.yaml up -d jellyfin plex
+#   docker compose -f docker-compose-no-gpu.yaml up -d jellyfin watchtower
 services:
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
@@ -54,3 +54,20 @@ services:
       - ${COMMON_PATH}/plex/transcode:/transcode
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-86400}
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

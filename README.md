@@ -827,14 +827,48 @@ If you want other users to access your Jellyfin server, you can create additiona
 
 # **Updating Applications**
 
-To update the applications, you need to stop the running containers and remove the existing Docker images. You can use the following commands to perform these operations:
+## **Automatic Updates (Watchtower)**
 
-```bash
-docker compose down
-docker image prune -a
+The stack includes [Watchtower](https://containrrr.dev/watchtower/), a container that monitors your running Docker containers and automatically pulls and redeploys them when a new image version is published.
+
+By default Watchtower checks for updates **every 24 hours**. You can change the interval by editing the `WATCHTOWER_POLL_INTERVAL` variable in your `.env` file (value in seconds):
+
+```yaml
+# Check every 6 hours
+WATCHTOWER_POLL_INTERVAL=21600
 ```
 
-Then, you can run `docker compose up -d` to restart the containers with the latest versions of the applications.
+Watchtower also cleans up old images after each update to save disk space.
+
+> [!TIP]
+> You can monitor Watchtower activity with:
+> ```bash
+> docker logs watchtower
+> ```
+
+## **Manual Updates**
+
+If you prefer to update on demand (or want to trigger an immediate update), use the provided update script:
+
+```bash
+# Update all services (GPU stack)
+bash compose_files/update.sh
+
+# Update all services (non-GPU stack)
+bash compose_files/update.sh --no-gpu
+
+# Update a single service
+bash compose_files/update.sh --service jellyfin
+```
+
+Alternatively, you can run the commands manually:
+
+```bash
+cd compose_files/
+docker compose -f docker-compose-nvidia.yaml pull
+docker compose -f docker-compose-nvidia.yaml up -d
+docker image prune -f
+```
 
 **[`^        back to top        ^`](#table-of-contents)**
 
