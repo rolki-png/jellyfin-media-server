@@ -3,7 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="${SCRIPT_DIR}/docker-compose-nvidia.yaml"
+COMPOSE_BASE="${SCRIPT_DIR}/docker-compose.yaml"
+COMPOSE_GPU="${SCRIPT_DIR}/docker-compose.gpu.yaml"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/.env"
 EXAMPLE_ENV_FILE="${SCRIPT_DIR}/.env.example"
 CI_MODE=false
@@ -33,8 +34,12 @@ if ! docker compose version >/dev/null 2>&1; then
   fail "docker compose is not available. Install Docker Compose v2 plugin."
 fi
 
-if [[ ! -f "${COMPOSE_FILE}" ]]; then
-  fail "Compose file not found: ${COMPOSE_FILE}"
+if [[ ! -f "${COMPOSE_BASE}" ]]; then
+  fail "Compose file not found: ${COMPOSE_BASE}"
+fi
+
+if [[ ! -f "${COMPOSE_GPU}" ]]; then
+  fail "GPU overlay not found: ${COMPOSE_GPU}"
 fi
 
 ENV_FILE="${DEFAULT_ENV_FILE}"
@@ -71,10 +76,11 @@ if [[ -n "${PGID:-}" && ! "${PGID}" =~ ^[0-9]+$ ]]; then
   fail "PGID must be numeric. Current value: '${PGID}'"
 fi
 
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >/dev/null
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_BASE}" config >/dev/null
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_BASE}" -f "${COMPOSE_GPU}" config >/dev/null
 
 if [[ "${CI_MODE}" == "false" && ! -d "${COMMON_PATH}" ]]; then
-  warn "COMMON_PATH does not exist yet (${COMMON_PATH}). Create it before running 'docker compose up -d'."
+  warn "COMMON_PATH does not exist yet (${COMMON_PATH}). Create it before running 'bash start.sh'."
 fi
 
-echo "Compose validation succeeded using env file: ${ENV_FILE}"
+echo "Compose validation succeeded (base + GPU overlay) using env file: ${ENV_FILE}"

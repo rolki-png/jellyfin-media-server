@@ -6,11 +6,13 @@ This is a Docker Compose orchestration project (no application source code to bu
 
 ### Project structure
 
-- `compose_files/docker-compose-nvidia.yaml` — main compose file (all 9 services, requires NVIDIA GPU)
-- `compose_files/docker-compose-no-gpu.yaml` — override for Jellyfin/Plex without GPU (for cloud/CI environments)
+- `compose_files/docker-compose.yaml` — base compose file (all services, CPU-only transcoding)
+- `compose_files/docker-compose.gpu.yaml` — GPU overlay (adds NVIDIA hardware transcoding to Jellyfin/Plex)
+- `compose_files/start.sh` — auto-detects GPU and starts the stack with the right compose files
+- `compose_files/update.sh` — pulls latest images and recreates containers (also auto-detects GPU)
+- `compose_files/validate.sh` — lints both compose files and validates required env vars
 - `compose_files/.env.example` — template environment config
 - `compose_files/.env` — active environment config (not committed)
-- `compose_files/validate.sh` — lints the compose config and validates required env vars
 
 ### Validation / Lint
 
@@ -20,20 +22,15 @@ bash compose_files/validate.sh
 
 Use `--ci` flag to run without a `.env` file (falls back to `.env.example`).
 
-### Running the stack (no GPU)
+### Running the stack
 
-The main compose file requires an NVIDIA GPU. In the cloud VM, use the no-GPU override for Jellyfin/Plex:
+GPU detection is automatic. A single command starts everything:
 
 ```bash
-# Non-GPU services (start these from docker-compose-nvidia.yaml)
-cd compose_files
-sudo docker compose -f docker-compose-nvidia.yaml up -d qbittorrent flaresolverr prowlarr jackett sonarr radarr jellyseerr
-
-# Jellyfin without GPU (uses the override file)
-sudo docker compose -f docker-compose-no-gpu.yaml --env-file .env up -d jellyfin
+bash compose_files/start.sh
 ```
 
-Plex is optional and can also be started via `docker-compose-no-gpu.yaml` if needed.
+On a machine with an NVIDIA GPU + nvidia-container-toolkit, Jellyfin and Plex get GPU-accelerated transcoding. Without a GPU, they fall back to CPU — no manual flags needed. The cloud VM has no GPU, so the stack always starts in CPU mode here.
 
 ### Environment setup
 

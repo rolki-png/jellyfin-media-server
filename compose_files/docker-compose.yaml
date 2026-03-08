@@ -95,7 +95,6 @@ services:
     container_name: jellyfin
     environment:
       <<: *linuxserver-env
-      NVIDIA_VISIBLE_DEVICES: all
     ports:
       - 8096:8096
       - 8920:8920
@@ -108,16 +107,6 @@ services:
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
       - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
-    devices:
-      - /dev/dri:/dev/dri
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities:
-                - gpu
   jellyseerr:
     <<: *service-defaults
     image: fallenbagel/jellyseerr:latest
@@ -137,7 +126,6 @@ services:
       <<: *linuxserver-env
       VERSION: docker
       PLEX_CLAIM: ${PLEX_CLAIM:-}
-      NVIDIA_VISIBLE_DEVICES: all
     ports:
       - 32400:32400
       - 32400:32400/udp
@@ -149,14 +137,6 @@ services:
       - ${COMMON_PATH}/plex/transcode:/transcode
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities:
-                - gpu
   watchtower:
     <<: *service-defaults
     image: containrrr/watchtower:latest

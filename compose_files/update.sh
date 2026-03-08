@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 #
-# Manually pull the latest images and recreate containers that have newer versions.
+# Pull the latest images and recreate containers that have newer versions.
+# GPU detection is automatic (same logic as start.sh).
+#
 # Usage:
-#   bash compose_files/update.sh                    # update the GPU stack
-#   bash compose_files/update.sh --no-gpu           # update the non-GPU stack
+#   bash compose_files/update.sh                    # update all services
 #   bash compose_files/update.sh --service jellyfin # update a single service
+#   bash compose_files/update.sh --force-cpu        # ignore GPU even if present
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
-COMPOSE_GPU="${SCRIPT_DIR}/docker-compose-nvidia.yaml"
-COMPOSE_NO_GPU="${SCRIPT_DIR}/docker-compose-no-gpu.yaml"
+COMPOSE_BASE="${SCRIPT_DIR}/docker-compose.yaml"
+COMPOSE_GPU="${SCRIPT_DIR}/docker-compose.gpu.yaml"
 
-NO_GPU=false
+FORCE_MODE=""
 SERVICES=()
 
 usage() {
-  echo "Usage: $0 [--no-gpu] [--service NAME ...]"
+  echo "Usage: $0 [--force-gpu | --force-cpu] [--service NAME ...]"
   echo ""
   echo "Options:"
-  echo "  --no-gpu            Use the non-GPU compose file"
+  echo "  --force-gpu         Force GPU mode (fails if NVIDIA is unavailable)"
+  echo "  --force-cpu         Force CPU-only mode even when a GPU is present"
   echo "  --service NAME      Update only the specified service(s) (repeatable)"
   echo "  -h, --help          Show this help message"
   exit 0
@@ -28,17 +31,10 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-gpu)
-      NO_GPU=true
-      shift
-      ;;
-    --service)
-      SERVICES+=("$2")
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      ;;
+    --force-gpu) FORCE_MODE="gpu"; shift ;;
+    --force-cpu) FORCE_MODE="cpu"; shift ;;
+    --service)   SERVICES+=("$2"); shift 2 ;;
+    -h|--help)   usage ;;
     *)
       echo "Unknown option: $1" >&2
       usage
@@ -51,24 +47,49 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-if [[ "${NO_GPU}" == "true" ]]; then
-  COMPOSE_FILE="${COMPOSE_NO_GPU}"
+# ---------------------------------------------------------------------------
+# GPU detection (mirrors start.sh)
+# ---------------------------------------------------------------------------
+has_nvidia_gpu() {
+  command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1
+}
+
+USE_GPU=false
+case "${FORCE_MODE}" in
+  gpu)
+    if ! has_nvidia_gpu; then
+      echo "ERROR: --force-gpu specified but nvidia-smi is not available." >&2
+      exit 1
+    fi
+    USE_GPU=true
+    ;;
+  cpu) USE_GPU=false ;;
+  *)   has_nvidia_gpu && USE_GPU=true ;;
+esac
+
+COMPOSE_CMD=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_BASE}")
+if [[ "${USE_GPU}" == "true" ]]; then
+  COMPOSE_CMD+=(-f "${COMPOSE_GPU}")
+  echo "==> NVIDIA GPU detected — updating with GPU overlay"
 else
-  COMPOSE_FILE="${COMPOSE_GPU}"
+  echo "==> No NVIDIA GPU detected — updating CPU-only stack"
 fi
 
+# ---------------------------------------------------------------------------
+# Pull → recreate → prune
+# ---------------------------------------------------------------------------
 echo "==> Pulling latest images..."
 if [[ ${#SERVICES[@]} -gt 0 ]]; then
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull "${SERVICES[@]}"
+  "${COMPOSE_CMD[@]}" pull "${SERVICES[@]}"
 else
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull
+  "${COMPOSE_CMD[@]}" pull
 fi
 
 echo "==> Recreating containers with updated images..."
 if [[ ${#SERVICES[@]} -gt 0 ]]; then
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d "${SERVICES[@]}"
+  "${COMPOSE_CMD[@]}" up -d "${SERVICES[@]}"
 else
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+  "${COMPOSE_CMD[@]}" up -d
 fi
 
 echo "==> Removing dangling images..."

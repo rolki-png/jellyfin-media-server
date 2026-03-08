@@ -179,14 +179,16 @@ sh get-docker.sh
 
 ### **Using Docker Compose :**
 
-To use Docker Compose with this repository, navigate to the `compose_files/` directory and run the following command:
+To start the stack, use the launcher script (auto-detects GPU — see [Installation](#installation)):
 
 ```bash
-docker compose up -d
+bash compose_files/start.sh
 ```
+
 To shut down the stack :
 
 ```bash
+cd compose_files/
 docker compose down
 ```
 
@@ -487,17 +489,24 @@ Validate the stack configuration before starting containers:
 bash compose_files/validate.sh
 ```
 
-To start the installation, execute:
+To start the stack, run the launcher script — it automatically detects whether an NVIDIA GPU is available and enables hardware transcoding accordingly:
 
 ```bash
-cd compose_files/
-docker compose -f docker-compose-nvidia.yaml up -d
+bash compose_files/start.sh
 ```
 
-[Go to the file here](compose_files/docker-compose-nvidia.yaml)
-
 > [!NOTE]
-> This setup includes NVIDIA GPU support for hardware transcoding in Jellyfin and Plex.
+> If an NVIDIA GPU and the `nvidia-container-toolkit` are installed, Jellyfin and Plex are launched with GPU-accelerated transcoding.  Otherwise the stack starts in CPU-only mode — no manual flag needed.
+>
+> You can also force a specific mode:
+> ```bash
+> bash compose_files/start.sh --force-gpu   # fail if GPU is unavailable
+> bash compose_files/start.sh --force-cpu   # skip GPU even if present
+> ```
+
+The compose files live in `compose_files/`:
+- [`docker-compose.yaml`](compose_files/docker-compose.yaml) — base stack (all services, CPU transcoding)
+- [`docker-compose.gpu.yaml`](compose_files/docker-compose.gpu.yaml) — GPU overlay (NVIDIA hardware transcoding for Jellyfin & Plex)
 
 **[`^        back to top        ^`](#table-of-contents)**
 
@@ -848,25 +857,25 @@ Watchtower also cleans up old images after each update to save disk space.
 
 ## **Manual Updates**
 
-If you prefer to update on demand (or want to trigger an immediate update), use the provided update script:
+If you prefer to update on demand (or want to trigger an immediate update), use the provided update script.  It auto-detects GPU availability, just like `start.sh`:
 
 ```bash
-# Update all services (GPU stack)
+# Update all services (auto-detects GPU)
 bash compose_files/update.sh
-
-# Update all services (non-GPU stack)
-bash compose_files/update.sh --no-gpu
 
 # Update a single service
 bash compose_files/update.sh --service jellyfin
+
+# Force CPU-only mode for the update
+bash compose_files/update.sh --force-cpu
 ```
 
 Alternatively, you can run the commands manually:
 
 ```bash
 cd compose_files/
-docker compose -f docker-compose-nvidia.yaml pull
-docker compose -f docker-compose-nvidia.yaml up -d
+docker compose pull
+docker compose up -d
 docker image prune -f
 ```
 
