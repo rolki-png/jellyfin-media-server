@@ -1,6 +1,8 @@
 ---
 x-service-defaults: &service-defaults
   restart: unless-stopped
+  labels:
+    com.centurylinklabs.watchtower.enable: "true"
   logging:
     driver: json-file
     options:
@@ -95,6 +97,9 @@ services:
     container_name: jellyfin
     environment:
       <<: *linuxserver-env
+      # Keep Jellyfin root by default to avoid permission regressions on existing installs.
+      PUID: ${JELLYFIN_PUID:-0}
+      PGID: ${JELLYFIN_PGID:-0}
       NVIDIA_VISIBLE_DEVICES: all
     ports:
       - 8096:8096
@@ -157,3 +162,19 @@ services:
               count: 1
               capabilities:
                 - gpu
+  watchtower:
+    <<: *service-defaults
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    environment:
+      <<: *tz-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - --label-enable
+      - --cleanup
+      - --rolling-restart
+      - --schedule
+      - "${WATCHTOWER_SCHEDULE:-0 0 4 * * *}"
