@@ -831,14 +831,30 @@ If you want other users to access your Jellyfin server, you can create additiona
 
 # **Updating Applications**
 
-To update the applications, you need to stop the running containers and remove the existing Docker images. You can use the following commands to perform these operations:
+Automatic updates are now handled by a `watchtower` container included in `docker-compose-nvidia.yaml`.
+It checks for new images and updates only labeled services on a schedule.
+
+By default, the update check runs every day at 04:00 (server time).
+You can change this by setting `WATCHTOWER_SCHEDULE` in `compose_files/.env`.
 
 ```bash
-docker compose down
-docker image prune -a
+WATCHTOWER_SCHEDULE=0 0 4 * * *
 ```
 
-Then, you can run `docker compose up -d` to restart the containers with the latest versions of the applications.
+To verify automatic updates are active:
+
+```bash
+docker compose ps watchtower
+docker compose logs watchtower
+```
+
+If you want to update manually at any time:
+
+```bash
+docker compose pull
+docker compose up -d
+docker image prune -f
+```
 
 **[`^        back to top        ^`](#table-of-contents)**
 
