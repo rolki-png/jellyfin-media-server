@@ -6,6 +6,8 @@ x-service-defaults: &service-defaults
     options:
       max-size: "10m"
       max-file: "3"
+  labels:
+    com.centurylinklabs.watchtower.enable: "true"
 
 x-linuxserver-env: &linuxserver-env
   PUID: ${PUID:-1000}
@@ -89,10 +91,39 @@ services:
       - ${COMMON_PATH}/qbittorrent/downloads:/downloads
     ports:
       - 7878:7878
+  jellyfin-init:
+    image: alpine:latest
+    container_name: jellyfin-init
+    user: "0:0"
+    # Fix ownership drift (e.g. root-owned plugin dirs from older runs) before
+    # jellyfin starts. Jellyfin 10.10+ rewrites plugin meta.json on load and
+    # fails startup if any file under /config is not owned by PUID:PGID.
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        chown -R ${PUID:-1000}:${PGID:-1000} /config /cache
+        echo "jellyfin-init: chowned /config and /cache to ${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ${COMMON_PATH}/configs/jellyfin:/config
+      - ${COMMON_PATH}/jellyfin/cache:/cache
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
   jellyfin:
     <<: *service-defaults
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
+    depends_on:
+      jellyfin-init:
+        condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
       NVIDIA_VISIBLE_DEVICES: all
@@ -157,3 +188,17 @@ services:
               count: 1
               capabilities:
                 - gpu
+  watchtower:
+    <<: *service-defaults
+    # containrrr/watchtower is unmaintained and fails on Docker 29+ (API min 1.40+).
+    image: nickfedor/watchtower:latest
+    container_name: watchtower
+    environment:
+      <<: *tz-env
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "false"
+      WATCHTOWER_REVIVE_STOPPED: "false"
+      WATCHTOWER_SCHEDULE: "${WATCHTOWER_SCHEDULE:-0 0 4 * * *}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

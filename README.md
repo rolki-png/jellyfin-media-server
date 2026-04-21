@@ -827,14 +827,21 @@ If you want other users to access your Jellyfin server, you can create additiona
 
 # **Updating Applications**
 
-To update the applications, you need to stop the running containers and remove the existing Docker images. You can use the following commands to perform these operations:
+The compose stack includes [Watchtower](https://github.com/nicholas-fedor/watchtower) (`watchtower` service), using the maintained [`nickfedor/watchtower`](https://hub.docker.com/r/nickfedor/watchtower) image so it works with current Docker Engine APIs (the original `containrrr/watchtower` image is unmaintained and errors on Docker 29+). It runs on a schedule, pulls newer images for labeled services, recreates those containers, and prunes old images (`WATCHTOWER_CLEANUP`). Only containers with the label `com.centurylinklabs.watchtower.enable=true` are updated (all services in `compose_files/docker-compose-nvidia.yaml` inherit this from shared defaults), so other containers on the same Docker host are not touched. If you upgraded the compose file after containers were already created, recreate them once so the label is applied (for example `docker compose ... up -d --force-recreate`).
+
+- Bring the updater online (from `compose_files` with your `.env` loaded): `docker compose -f docker-compose-nvidia.yaml up -d watchtower`
+- Optional: set `WATCHTOWER_SCHEDULE` in `compose_files/.env` (6-field cron; default is 04:00 daily). See `compose_files/.env.example`.
+- One-off update of all labeled containers: `docker compose -f docker-compose-nvidia.yaml run --rm watchtower --run-once`
+- Logs: `docker logs -f watchtower`
+
+**Manual updates** (if you prefer not to use Watchtower): stop the stack, remove old images, and recreate:
 
 ```bash
 docker compose down
 docker image prune -a
 ```
 
-Then, you can run `docker compose up -d` to restart the containers with the latest versions of the applications.
+Then run `docker compose up -d` to restart the containers with the latest images.
 
 **[`^        back to top        ^`](#table-of-contents)**
 
