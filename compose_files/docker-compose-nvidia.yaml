@@ -65,10 +65,37 @@ services:
       - ${COMMON_PATH}/configs/jackett:/config
     ports:
       - 9117:9117
+  media-init:
+    image: alpine:latest
+    container_name: media-init
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /tv /movies
+        chown -R ${PUID:-1000}:${PGID:-1000} /tv /movies
+        echo "media-init: chowned /tv and /movies to ${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ${COMMON_PATH}/sonarr/tv:/tv
+      - ${COMMON_PATH}/radarr/movies:/movies
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
   sonarr:
     <<: *service-defaults
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
+    depends_on:
+      media-init:
+        condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
     volumes:
@@ -126,12 +153,12 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
-      NVIDIA_VISIBLE_DEVICES: all
+      JELLYFIN_PublishedServerUrl: ${JELLYFIN_PUBLISHED_SERVER_URL}
     ports:
       - 8096:8096
       - 8920:8920
       - 7359:7359/udp
-      - 1900:1900/udp
+      # 1900/udp: Home Assistant (SSDP) already uses host port 1900 on this machine.
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
       - ${COMMON_PATH}/configs/jellyfin:/config
@@ -141,53 +168,29 @@ services:
       - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
     devices:
       - /dev/dri:/dev/dri
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities:
-                - gpu
-  jellyseerr:
+  seerr:
     <<: *service-defaults
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
     environment:
       <<: *tz-env
-      LOG_LEVEL: ${JELLYSEERR_LOG_LEVEL:-debug}
+      LOG_LEVEL: ${SEERR_LOG_LEVEL:-debug}
+      PORT: 5055
     ports:
       - 5055:5055
     volumes:
       - ${COMMON_PATH}/configs/jellyseerr:/app/config
-  plex:
-    <<: *service-defaults
-    image: lscr.io/linuxserver/plex:latest
-    container_name: plex
-    environment:
-      <<: *linuxserver-env
-      VERSION: docker
-      PLEX_CLAIM: ${PLEX_CLAIM:-}
-      NVIDIA_VISIBLE_DEVICES: all
-    ports:
-      - 32400:32400
-      - 32400:32400/udp
-      - 32469:32469
-      - 32469:32469/udp
-    volumes:
-      - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/plex:/config
-      - ${COMMON_PATH}/plex/transcode:/transcode
-      - ${COMMON_PATH}/sonarr/tv:/data/tvshows
-      - ${COMMON_PATH}/radarr/movies:/data/movies
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities:
-                - gpu
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    networks:
+      default:
+        aliases:
+          - jellyseerr
   watchtower:
     <<: *service-defaults
     # containrrr/watchtower is unmaintained and fails on Docker 29+ (API min 1.40+).
@@ -199,6 +202,9 @@ services:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_INCLUDE_STOPPED: "false"
       WATCHTOWER_REVIVE_STOPPED: "false"
-      WATCHTOWER_SCHEDULE: "${WATCHTOWER_SCHEDULE:-0 0 4 * * *}"
+      # Poll every 6h while the host is running. A fixed 04:00 cron often never
+      # fires on desktops that sleep overnight (logs showed zero scheduled runs).
+      # Override in .env: WATCHTOWER_POLL_INTERVAL=86400 or WATCHTOWER_SCHEDULE="0 0 4 * * *"
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-21600}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

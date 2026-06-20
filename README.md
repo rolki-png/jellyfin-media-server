@@ -5,7 +5,7 @@
 </div>
 
 
-Welcome to the All-jellyfin-media-server Repository! This repository contains everything you need to create your own media server with Jellyfin, Plex, Sonarr, Radarr, Jellyseerr, Prowlarr, Jackett, qBittorrent, and FlareSolverr in a Docker Compose setup with NVIDIA GPU support for hardware transcoding.
+Welcome to the All-jellyfin-media-server Repository! This repository contains everything you need to create your own media server with Jellyfin, Sonarr, Radarr, Seerr, Prowlarr, Jackett, qBittorrent, and FlareSolverr in a Docker Compose setup with NVIDIA GPU support for hardware transcoding.
 
 ![](https://img.shields.io/github/stars/Morzomb/All-jellyfin-media-server.svg)
 ![](https://img.shields.io/github/forks/Morzomb/All-jellyfin-media-server.svg)
@@ -24,7 +24,7 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
   - [**Table of contents**](#table-of-contents)
   - [**What is Isyrr for?**](#what-is-isyrr-for)
     - [**Jellyfin**](#jellyfin)
-    - [**Jellyseerr**](#jellyseerr)
+    - [**Seerr**](#seerr)
     - [**Sonarr**](#sonarr)
     - [**Radarr**](#radarr)
     - [**Jackett**](#jackett)
@@ -59,7 +59,7 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
   - [**Jellyfin**](#jellyfin-1)
     - [**Initial Setup**](#initial-setup)
     - [**Adding Users to Jellyfin**](#adding-users-to-jellyfin)
-  - [**Jellyseerr**](#jellyseerr-1)
+  - [**Seerr**](#seerr-configuration)
     - [**Sign In / Configuration**](#sign-in--configuration)
     - [**Integrating with Radarr**](#integrating-with-radarr)
     - [**Integrating with Sonarr**](#integrating-with-sonarr)
@@ -85,13 +85,9 @@ This setup uses Docker and Docker Compose to deploy the services.
     <img src="https://jellyfin.org/images/logo.svg" width="300" height="100"  style="margin: 15px 10px;">
 </div>
 
-### **Jellyseerr**
+### **Seerr**
 
-[Jellyseerr](https://github.com/Fallenbagel/jellyseerr) is an open-source application that allows you to automate the management of your Jellyfin media server. It works by monitoring your Jellyfin library and automatically searching for and downloading new content based on your preferences. Jellyseerr supports integration with various other tools, such as Sonarr and Radarr, to provide a seamless experience for managing your media collection.
-
-<div style="text-align: center"> 
-    <img src="https://raw.githubusercontent.com/Fallenbagel/jellyseerr/develop/public/logo_full.svg" width="300" height="100" style="margin: 15px 10px;"> 
-</div>
+[Seerr](https://docs.2seerr.dev/) is the unified successor to Jellyseerr and Overseerr. It automates media requests for Jellyfin, with Sonarr and Radarr integration for downloads.
 
 ### **Sonarr**
 
@@ -511,7 +507,7 @@ Once the applications are deployed, you can access them using the following addr
 
 * Jellyfin : http://localhost:8096
 * Plex : http://localhost:32400/web
-* Jellyseerr : http://localhost:5055
+* Seerr : http://localhost:5055
 * Sonarr : http://localhost:8989
 * Radarr : http://localhost:7878
 * Jackett : http://localhost:9117
@@ -784,11 +780,13 @@ If you want other users to access your Jellyfin server, you can create additiona
 
 ---
 
-## **Jellyseerr**
+## **Seerr configuration**
+
+> Config lives at `configs/jellyseerr` (unchanged path). Seerr migrates Jellyseerr data automatically on first start. See the [migration guide](https://docs.seerr.dev/migration-guide).
 
 ### **Sign In / Configuration**
 
-1. Open the WebUI and in the **Welcome to Jellyseerr** screen, select **Use your Jellyfin account**.
+1. Open the WebUI and select **Use your Jellyfin account** (existing setups skip the welcome flow after migration).
 2. Fill in the information as follows:
    - **Jellyfin URL**: `http://jellyfin:8096/`
    - **Email Address**: `<your email address>`
@@ -830,7 +828,7 @@ If you want other users to access your Jellyfin server, you can create additiona
 The compose stack includes [Watchtower](https://github.com/nicholas-fedor/watchtower) (`watchtower` service), using the maintained [`nickfedor/watchtower`](https://hub.docker.com/r/nickfedor/watchtower) image so it works with current Docker Engine APIs (the original `containrrr/watchtower` image is unmaintained and errors on Docker 29+). It runs on a schedule, pulls newer images for labeled services, recreates those containers, and prunes old images (`WATCHTOWER_CLEANUP`). Only containers with the label `com.centurylinklabs.watchtower.enable=true` are updated (all services in `compose_files/docker-compose-nvidia.yaml` inherit this from shared defaults), so other containers on the same Docker host are not touched. If you upgraded the compose file after containers were already created, recreate them once so the label is applied (for example `docker compose ... up -d --force-recreate`).
 
 - Bring the updater online (from `compose_files` with your `.env` loaded): `docker compose -f docker-compose-nvidia.yaml up -d watchtower`
-- Optional: set `WATCHTOWER_SCHEDULE` in `compose_files/.env` (6-field cron; default is 04:00 daily). See `compose_files/.env.example`.
+- Optional: set `WATCHTOWER_POLL_INTERVAL` (seconds; default `21600` = every 6 hours while the host is on) or `WATCHTOWER_SCHEDULE` (6-field cron, quoted) in `compose_files/.env`. See `compose_files/.env.example`.
 - One-off update of all labeled containers: `docker compose -f docker-compose-nvidia.yaml run --rm watchtower --run-once`
 - Logs: `docker logs -f watchtower`
 
