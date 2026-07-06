@@ -6,3 +6,6 @@
 *.env
 .env.*
 !.env.example
+compose_files/recyclarr/secrets.yml
+compose_files/configs/unpackerr/
+compose_files/recyclarr/secrets.yml

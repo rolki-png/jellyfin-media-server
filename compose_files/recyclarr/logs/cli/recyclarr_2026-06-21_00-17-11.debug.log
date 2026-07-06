@@ -1,0 +1,118 @@
+[00:17:11 DBG] Recyclarr Version: 8.3.2+Branch.master.Sha.fc0c22a607bee044f242f84adf25ca1c284126a5
+[00:17:11 DBG] App Data Dir: /config
+[00:17:11 INF] Initializing provider: official (type: trash-guides)
+[00:17:11 DBG] Using URL: https://github.com/TRaSH-Guides/Guides.git, Refs: ["master","main"]
+[00:17:11 DBG] Executing git command with args: ["status"]
+[00:17:11 DBG] Command Output: On branch master
+nothing to commit, working tree clean
+[00:17:11 DBG] Attempting to fetch reference: master
+[00:17:11 DBG] Executing git command with args: ["fetch","--depth","1","https://github.com/TRaSH-Guides/Guides.git","master"]
+[00:17:12 DBG] Command Output: 
+[00:17:12 DBG] Successfully fetched reference: master
+[00:17:12 DBG] Executing git command with args: ["reset","--hard","FETCH_HEAD"]
+[00:17:12 DBG] Command Output: HEAD is now at ef6e5ea feat(radarr): Add RlsGrp `RBB` to `LQ` due to cam and microsized releases (#2779)
+[00:17:12 DBG] MapResourcePaths called for provider official at /config/resources/trash-guides/git/official
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/radarr/cf (Exists: True)
+[00:17:12 DBG] Provider official: Found 240 files in docs/json/radarr/cf
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/radarr/quality-size (Exists: True)
+[00:17:12 DBG] Provider official: Found 4 files in docs/json/radarr/quality-size
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/radarr/naming (Exists: True)
+[00:17:12 DBG] Provider official: Found 1 files in docs/json/radarr/naming
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/sonarr/cf (Exists: True)
+[00:17:12 DBG] Provider official: Found 235 files in docs/json/sonarr/cf
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/sonarr/quality-size (Exists: True)
+[00:17:12 DBG] Provider official: Found 2 files in docs/json/sonarr/quality-size
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/sonarr/naming (Exists: True)
+[00:17:12 DBG] Provider official: Found 1 files in docs/json/sonarr/naming
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/radarr/cf-groups (Exists: True)
+[00:17:12 DBG] Provider official: Found 40 files in docs/json/radarr/cf-groups
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/sonarr/cf-groups (Exists: True)
+[00:17:12 DBG] Provider official: Found 38 files in docs/json/sonarr/cf-groups
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/radarr/quality-profiles (Exists: True)
+[00:17:12 DBG] Provider official: Found 36 files in docs/json/radarr/quality-profiles
+[00:17:12 DBG] Provider official: GlobJsonFiles received 1 paths
+[00:17:12 DBG] Provider official: Checking docs/json/sonarr/quality-profiles (Exists: True)
+[00:17:12 DBG] Provider official: Found 19 files in docs/json/sonarr/quality-profiles
+[00:17:12 INF] Initializing provider: official (type: config-templates)
+[00:17:12 DBG] Using URL: https://github.com/recyclarr/config-templates.git, Refs: ["v8","master","main"]
+[00:17:12 DBG] Executing git command with args: ["status"]
+[00:17:12 DBG] Command Output: On branch master
+nothing to commit, working tree clean
+[00:17:12 DBG] Attempting to fetch reference: v8
+[00:17:12 DBG] Executing git command with args: ["fetch","--depth","1","https://github.com/recyclarr/config-templates.git","v8"]
+[00:17:12 DBG] Command Output: 
+[00:17:12 DBG] Successfully fetched reference: v8
+[00:17:12 DBG] Executing git command with args: ["reset","--hard","FETCH_HEAD"]
+[00:17:12 DBG] Command Output: HEAD is now at bb642fe chore: remove repo-local mise.toml
+[00:17:12 DBG] Loading config file: /config/recyclarr.yml
+[00:17:12 INF] Rebuilding state for Radarr instance uhd-bluray-web
+[00:17:12 DBG] Loading Custom Format State from path: /config/state/radarr/7de96ad84fa57af3/custom-format-mappings.json
+[00:17:12 DBG] Loaded existing custom formats state with 57 entries
+[00:17:12 DBG] HTTP Request: GET http://REDACTED:7878/api/v3/customformat
+[00:17:12 DBG] HTTP Response: 200 GET http://REDACTED:7878/api/v3/customformat
+[00:17:12 DBG] Fetched 59 custom formats from service
+[00:17:12 DBG] QualityProfile: Querying Radarr quality profiles
+[00:17:12 DBG] QualityProfile: Found 36 quality profile files in registry
+[00:17:12 DBG] QualityProfile: Retrieved 36 Radarr quality profiles
+[00:17:12 DBG] CfGroup: Querying Radarr CF groups
+[00:17:12 DBG] CfGroup: Found 40 CF group files in registry
+[00:17:12 DBG] CfGroup: Retrieved 40 Radarr CF groups
+[00:17:12 DBG] Auto-syncing default CF group [Audio] Audio Formats for profiles: UHD Bluray + WEB
+[00:17:12 DBG] Auto-syncing default CF group [HDR Formats] HDR for profiles: UHD Bluray + WEB
+[00:17:12 DBG] Auto-syncing default CF group [Optional] Golden Rule UHD for profiles: UHD Bluray + WEB
+[00:17:12 DBG] Auto-syncing default CF group [Streaming Services] General for profiles: UHD Bluray + WEB
+[00:17:12 DBG] Auto-syncing default CF group [Unwanted] Unwanted Formats for profiles: UHD Bluray + WEB
+[00:17:12 DBG] CustomFormat: Querying Radarr custom formats
+[00:17:12 DBG] CustomFormat: Found 240 CF files in registry
+[00:17:12 DBG] CustomFormat: Retrieved 240 Radarr custom formats
+[00:17:12 INF] custom formats state unchanged (57 entries)
+[00:17:12 DBG] Loading Quality Profile State from path: /config/state/radarr/7de96ad84fa57af3/quality-profile-mappings.json
+[00:17:12 DBG] Loaded existing quality profiles state with 1 entries
+[00:17:12 DBG] HTTP Request: GET http://REDACTED:7878/api/v3/qualityprofile
+[00:17:12 DBG] HTTP Response: 200 GET http://REDACTED:7878/api/v3/qualityprofile
+[00:17:12 DBG] Fetched 7 quality profiles from service
+[00:17:12 DBG] QualityProfile: Querying Radarr quality profiles
+[00:17:12 DBG] QualityProfile: Found 36 quality profile files in registry
+[00:17:12 DBG] QualityProfile: Retrieved 36 Radarr quality profiles
+[00:17:12 INF] quality profiles state unchanged (1 entries)
+[00:17:12 INF] Rebuilding state for Sonarr instance web-2160p
+[00:17:12 DBG] Loading Custom Format State from path: /config/state/sonarr/baa8de56199cb645/custom-format-mappings.json
+[00:17:12 DBG] Loaded existing custom formats state with 40 entries
+[00:17:12 DBG] HTTP Request: GET http://REDACTED:8989/api/v3/customformat
+[00:17:12 DBG] HTTP Response: 200 GET http://REDACTED:8989/api/v3/customformat
+[00:17:12 DBG] Fetched 42 custom formats from service
+[00:17:12 DBG] QualityProfile: Querying Sonarr quality profiles
+[00:17:12 DBG] QualityProfile: Found 19 quality profile files in registry
+[00:17:12 DBG] QualityProfile: Retrieved 19 Sonarr quality profiles
+[00:17:12 DBG] CfGroup: Querying Sonarr CF groups
+[00:17:12 DBG] CfGroup: Found 38 CF group files in registry
+[00:17:12 DBG] CfGroup: Retrieved 38 Sonarr CF groups
+[00:17:12 DBG] Auto-syncing default CF group [HDR Formats] HDR for profiles: WEB-2160p
+[00:17:12 DBG] Auto-syncing default CF group [Optional] Golden Rule UHD for profiles: WEB-2160p
+[00:17:12 DBG] Auto-syncing default CF group [Optional] Language Profiles for profiles: WEB-2160p
+[00:17:12 DBG] Auto-syncing default CF group [Streaming Services] General for profiles: WEB-2160p
+[00:17:12 DBG] Auto-syncing default CF group [Streaming Services] HD/UHD boost for profiles: WEB-2160p
+[00:17:12 DBG] Auto-syncing default CF group [Unwanted] Unwanted Formats for profiles: WEB-2160p
+[00:17:12 DBG] CustomFormat: Querying Sonarr custom formats
+[00:17:12 DBG] CustomFormat: Found 235 CF files in registry
+[00:17:12 DBG] CustomFormat: Retrieved 235 Sonarr custom formats
+[00:17:12 INF] custom formats state unchanged (40 entries)
+[00:17:12 DBG] Loading Quality Profile State from path: /config/state/sonarr/baa8de56199cb645/quality-profile-mappings.json
+[00:17:12 DBG] Loaded existing quality profiles state with 1 entries
+[00:17:12 DBG] HTTP Request: GET http://REDACTED:8989/api/v3/qualityprofile
+[00:17:12 DBG] HTTP Response: 200 GET http://REDACTED:8989/api/v3/qualityprofile
+[00:17:12 DBG] Fetched 7 quality profiles from service
+[00:17:12 DBG] QualityProfile: Querying Sonarr quality profiles
+[00:17:12 DBG] QualityProfile: Found 19 quality profile files in registry
+[00:17:12 DBG] QualityProfile: Retrieved 19 Sonarr quality profiles
+[00:17:12 INF] quality profiles state unchanged (1 entries)
+[00:17:12 DBG] Cleaning up logs using max files of 20

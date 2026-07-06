@@ -17,9 +17,26 @@ x-linuxserver-env: &linuxserver-env
 x-tz-env: &tz-env
   TZ: ${TZ:-Etc/UTC}
 
+# Cap container memory to reduce cgroup memory-accounting pressure (see kswapd bad-page freezes).
+x-mem-256m: &mem-256m
+  mem_limit: 256m
+  memswap_limit: 256m
+
+x-mem-512m: &mem-512m
+  mem_limit: 512m
+  memswap_limit: 512m
+
+x-mem-1g: &mem-1g
+  mem_limit: 1g
+  memswap_limit: 1g
+
+x-mem-2g: &mem-2g
+  mem_limit: 2g
+  memswap_limit: 2g
+
 services:
   qbittorrent:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-1g]
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
     environment:
@@ -35,7 +52,7 @@ services:
       - 6881:6881
       - 6881:6881/udp
   flaresolverr:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-512m]
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     environment:
@@ -46,7 +63,7 @@ services:
     ports:
       - 8191:8191
   prowlarr:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-512m]
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
     environment:
@@ -56,7 +73,7 @@ services:
     ports:
       - 9696:9696
   jackett:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-512m]
     image: lscr.io/linuxserver/jackett:latest
     container_name: jackett
     environment:
@@ -65,37 +82,10 @@ services:
       - ${COMMON_PATH}/configs/jackett:/config
     ports:
       - 9117:9117
-  media-init:
-    image: alpine:latest
-    container_name: media-init
-    user: "0:0"
-    command:
-      - sh
-      - -c
-      - |
-        set -e
-        mkdir -p /tv /movies
-        chown -R ${PUID:-1000}:${PGID:-1000} /tv /movies
-        echo "media-init: chowned /tv and /movies to ${PUID:-1000}:${PGID:-1000}"
-    volumes:
-      - ${COMMON_PATH}/sonarr/tv:/tv
-      - ${COMMON_PATH}/radarr/movies:/movies
-    environment:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
-    restart: "no"
-    logging:
-      driver: json-file
-      options:
-        max-size: "1m"
-        max-file: "1"
   sonarr:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-512m]
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
-    depends_on:
-      media-init:
-        condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
     volumes:
@@ -106,7 +96,7 @@ services:
     ports:
       - 8989:8989
   radarr:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-512m]
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
     environment:
@@ -145,7 +135,7 @@ services:
         max-size: "1m"
         max-file: "1"
   jellyfin:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-2g]
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     depends_on:
@@ -153,12 +143,11 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
-      JELLYFIN_PublishedServerUrl: ${JELLYFIN_PUBLISHED_SERVER_URL}
     ports:
       - 8096:8096
       - 8920:8920
       - 7359:7359/udp
-      # 1900/udp: Home Assistant (SSDP) already uses host port 1900 on this machine.
+      # 1900/SSDP omitted — Home Assistant binds host UDP 1900; Samsung app uses 8096 directly.
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
       - ${COMMON_PATH}/configs/jellyfin:/config
@@ -166,33 +155,45 @@ services:
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
       - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
+    # Intel iGPU (VAAPI/QSV) for hardware transcoding — no discrete GPU required.
     devices:
       - /dev/dri:/dev/dri
-  seerr:
-    <<: *service-defaults
-    image: ghcr.io/seerr-team/seerr:latest
-    container_name: seerr
-    init: true
+  jellyseerr:
+    <<: [*service-defaults, *mem-512m]
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
     environment:
       <<: *tz-env
-      LOG_LEVEL: ${SEERR_LOG_LEVEL:-debug}
-      PORT: 5055
+      LOG_LEVEL: ${JELLYSEERR_LOG_LEVEL:-debug}
     ports:
       - 5055:5055
     volumes:
       - ${COMMON_PATH}/configs/jellyseerr:/app/config
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
-      start_period: 20s
-      timeout: 3s
-      interval: 15s
-      retries: 3
-    networks:
-      default:
-        aliases:
-          - jellyseerr
+  plex:
+    <<: [*service-defaults, *mem-2g]
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    environment:
+      <<: *linuxserver-env
+      VERSION: docker
+      PLEX_CLAIM: ${PLEX_CLAIM:-}
+      # Helps Xbox/TV clients discover the server on LAN (set in .env).
+      ADVERTISE_IP: ${PLEX_ADVERTISE_IP:-}
+    ports:
+      - 32400:32400
+      - 32400:32400/udp
+      - 32469:32469
+      - 32469:32469/udp
+    volumes:
+      - ${COMMON_PATH}:${COMMON_PATH}
+      - ${COMMON_PATH}/configs/plex:/config
+      - ${COMMON_PATH}/plex/transcode:/transcode
+      - ${COMMON_PATH}/sonarr/tv:/data/tvshows
+      - ${COMMON_PATH}/radarr/movies:/data/movies
+    devices:
+      - /dev/dri:/dev/dri
   watchtower:
-    <<: *service-defaults
+    <<: [*service-defaults, *mem-256m]
     # containrrr/watchtower is unmaintained and fails on Docker 29+ (API min 1.40+).
     image: nickfedor/watchtower:latest
     container_name: watchtower
@@ -202,9 +203,8 @@ services:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_INCLUDE_STOPPED: "false"
       WATCHTOWER_REVIVE_STOPPED: "false"
-      # Poll every 6h while the host is running. A fixed 04:00 cron often never
-      # fires on desktops that sleep overnight (logs showed zero scheduled runs).
-      # Override in .env: WATCHTOWER_POLL_INTERVAL=86400 or WATCHTOWER_SCHEDULE="0 0 4 * * *"
-      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-21600}
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_TIMEOUT: "120s"
+      WATCHTOWER_SCHEDULE: "${WATCHTOWER_SCHEDULE:-0 0 4 * * *}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
