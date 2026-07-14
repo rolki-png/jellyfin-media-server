@@ -5,7 +5,7 @@
 </div>
 
 
-Welcome to the All-jellyfin-media-server Repository! This repository contains everything you need to create your own media server with Jellyfin, Sonarr, Radarr, Seerr, Prowlarr, Jackett, qBittorrent, and FlareSolverr in a Docker Compose setup with NVIDIA GPU support for hardware transcoding.
+Welcome to the All-jellyfin-media-server Repository! This repository contains everything you need to create your own media server with Jellyfin, Sonarr, Radarr, Seerr, Prowlarr, Jackett, qBittorrent, and FlareSolverr in a Docker Compose setup.
 
 ![](https://img.shields.io/github/stars/Morzomb/All-jellyfin-media-server.svg)
 ![](https://img.shields.io/github/forks/Morzomb/All-jellyfin-media-server.svg)
@@ -14,9 +14,6 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
 [![GitHub last commit](https://img.shields.io/github/last-commit/Morzomb/All-jellyfin-media-server.svg)](https://github.com/Morzomb/All-jellyfin-media-server/commits/master)
 ![GitHub repo size](https://img.shields.io/github/repo-size/Morzomb/All-jellyfin-media-server)
 ![visitors](https://visitor-badge.laobi.icu/badge?page_id=Morzomb.All-jellyfin-media-server.id)
-
-> [!NOTE] 
-> **Acceder au repository en [Français](README-fr.md)**
 
 ## **Table of contents**
 
@@ -34,10 +31,6 @@ Welcome to the All-jellyfin-media-server Repository! This repository contains ev
 - [**Prerequisites**](#prerequisites)
   - [**Docker**](#docker)
     - [**Using Docker Compose :**](#using-docker-compose-)
-  - [**NVIDIA**](#nvidia)
-    - [**First Method**](#first-method)
-  - [**Final Verification**](#final-verification)
-  - [**Second Method**](#second-method)
 - [**Installation**](#installation)
 - [**Accessing Applications**](#accessing-applications)
 - [**Configuration Guide for Web Interfaces Only**](#configuration-guide-for-web-interfaces-only)
@@ -143,7 +136,7 @@ This setup uses Docker and Docker Compose to deploy the services.
 # **Prerequisites**
 
 > [!NOTE]  
-> This service requires a machine with at least 4 CPU cores and 8 GB of RAM. It is also highly recommended to have an NVIDIA GPU for optimal performance.
+> This service requires a machine with at least 4 CPU cores and 8 GB of RAM.
 
 Première chose à faire mettre à jour votre systèmes :
 
@@ -188,272 +181,6 @@ docker compose down
 
 **[`^        back to top        ^`](#table-of-contents)**
 
-## **NVIDIA**
-
-> [!WARNING]  
-> Please be aware that due to the recent updates to Debian 12 and Proxmox, NVIDIA drivers have become unstable. Therefore, there are two methods for installing the drivers.
-
-For my server, it has an NVIDIA GeForce 1060 graphics card. The installed OS is Proxmox 8.1.10, based on Debian 12. If you need to check compatibility, refer to the [NVIDIA support matrix](https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new).
-
-### **First Method**
-
-Go to the [NVIDIA website](https://www.nvidia.com/en-us/drivers/) and select your graphics card. Here is an example:
-
-<div style="text-align: center">
-    <img src="image/nvidia/nv1.png" style="margin: 15px 10px;">
-</div>
-
----
-
-<div style="text-align: center">
-    <img src="image/nvidia/nv2.png" style="margin: 15px 10px;">
-</div>
-
-Copy the download link for the driver, you should get a link that looks like this:
-
-```text
-https://us.download.nvidia.com/XFree86/Linux-x86_64/550.127.05/NVIDIA-Linux-x86_64-550.127.05.run
-```
-
-1. System Update and Preparation
-
-Update and upgrade your system to ensure all packages are up to date.
-
-```bash
-apt update
-apt upgrade
-```
-
-2. Download and Prepare the NVIDIA Driver
-
-Download the required NVIDIA driver.
-
-```bash
-wget https://us.download.nvidia.com/XFree86/Linux-x86_64/550.127.05/NVIDIA-Linux-x86_64-550.127.05.run
-chmod u+x NVIDIA-Linux-x86_64-550.127.05.run
-```
-
-3. Install the NVIDIA Container Toolkit Keys and Repository
-
-Add the GPG key and configure the repository for NVIDIA container tools.
-
-```bash
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-    tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-```
-
-4. Update Repositories and Install Required Packages
-
-Update the repositories and install the necessary packages for compilation.
-
-```bash
-apt update
-apt install pve-headers gcc make
-```
-
-5. Install the NVIDIA Driver
-
-Install the downloaded NVIDIA driver using the kernel source path.
-
-```bash
-./NVIDIA-Linux-x86_64-550.127.05.run --kernel-source-path /usr/src/linux-headers-6.8.12-3-pve/
-```
-
-6. Install and Configure NVIDIA Container Toolkit
-
-Install the NVIDIA Container Toolkit and configure it for Docker.
-
-```bash
-apt install nvidia-container-toolkit
-nvidia-ctk runtime configure --runtime=docker
-```
-
-7. Configure Docker Daemon
-
-Edit the Docker configuration file to set up the runtime and data path.
-
-```bash
-nano /etc/docker/daemon.json
-```
-
-Add the following content :
-
-```json
-{
-    "data-root": "/<YOUR_PATH>/docker",
-    "runtimes": {
-        "nvidia": {
-            "args": [],
-            "path": "nvidia-container-runtime"
-        }
-    }
-}
-```
-
-8. Reboot
-
-Your environment is now set up to run Docker containers with NVIDIA GPU support.
-
-
-## **Final Verification**
-
-Ensure the GPU is properly detected :
-
-```
-root@pve:~#nvidia-smi
-+-----------------------------------------------------------------------------+
-| NVIDIA-SMI 525.147.05   Driver Version: 525.147.05   CUDA Version: 12.0     |
-|-------------------------------+----------------------+----------------------+
-| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
-|                               |                      |               MIG M. |
-|===============================+======================+======================|
-|   0  NVIDIA GeForce ...  On   | 00000000:01:00.0 Off |                  N/A |
-| N/A   47C    P8     9W /  78W |      1MiB /  3072MiB |      0%      Default |
-|                               |                      |                  N/A |
-+-------------------------------+----------------------+----------------------+
-
-+-----------------------------------------------------------------------------+
-| Processes:                                                                  |
-|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
-|        ID   ID                                                   Usage      |
-|=============================================================================|
-|  No running processes found                                                 |
-+-----------------------------------------------------------------------------+
-```
-
-**[`^        back to top        ^`](#table-of-contents)**
-
-## **Second Method**
-
-> [!WARNING]  
-> This method is deprecated as it can cause significant conflicts if you frequently update your server.
-
-1. Your `/etc/apt/sources.list` should look like this :
-```bash
-deb http://ftp.debian.org/debian bookworm main contrib
-deb http://ftp.debian.org/debian bookworm-updates main contrib
-
-# Proxmox VE pve-no-subscription repository provided by proxmox.com,
-# NOT recommended for production use
-deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription
-
-# security updates
-deb http://security.debian.org/debian-security bookworm-security main contrib
-
-# Debian Bookworm
-### Add this line
-deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
-```
-
-And : 
-
-```bash
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-    tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-```
-
-2. Update repositories :
-```bash
-apt update
-```
-3. Install updates :
-```bash
-apt upgrade
-```
-4. Install NVIDIA drivers :
-
-Only for Proxmox environment :
-
-```bash
-apt install pve-headers
-```
-Then :
-
-```bash
-apt install libnvidia-cfg1 nvidia-kernel-source nvidia-kernel-common nvidia-driver nvidia-container-toolkit
-
-nvidia-ctk runtime configure --runtime=docker
-```
-
-5. Configure Docker Daemon
-
-Edit the Docker configuration file to set up the runtime and data path.
-
-```bash
-nano /etc/docker/daemon.json
-```
-
-Add the following content:
-
-```json
-{
-    "data-root": "/<YOUR_PATH>/docker",
-    "runtimes": {
-        "nvidia": {
-            "args": [],
-            "path": "nvidia-container-runtime"
-        }
-    }
-}
-```
-
-6. Reboot
-
-7. Then enter **nvidia-smi** which should display :
-
-```
-root@pve:~#nvidia-smi
-+-----------------------------------------------------------------------------+
-| NVIDIA-SMI 525.147.05   Driver Version: 525.147.05   CUDA Version: 12.0     |
-|-------------------------------+----------------------+----------------------+
-| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
-|                               |                      |               MIG M. |
-|===============================+======================+======================|
-|   0  NVIDIA GeForce ...  On   | 00000000:01:00.0 Off |                  N/A |
-| N/A   47C    P8     9W /  78W |      1MiB /  3072MiB |      0%      Default |
-|                               |                      |                  N/A |
-+-------------------------------+----------------------+----------------------+
-
-+-----------------------------------------------------------------------------+
-| Processes:                                                                  |
-|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
-|        ID   ID                                                   Usage      |
-|=============================================================================|
-|  No running processes found                                                 |
-+-----------------------------------------------------------------------------+
-```
-
-There might be errors during installation; it's preferable to use nvidia-patch :
-
-```bash
-git clone https://github.com/keylase/nvidia-patch.git
-
-cd nvidia-patch
-./patch.sh
-```
-
-> [!CAUTION]  
-> If you need to restart the installation, here’s how to uninstall the NVIDIA drivers:
-> 
-> ```bash
-> apt remove nvidia-driver
-> apt purge *nvidia*
-> apt autoremove
-> apt clean
-> apt search nvidia-driver
-> apt autoremove glx-alternative-nvidia libegl-nvidia0 libgl1-nvidia-glvnd-glx libgles-nvidia1 libgles-nvidia2 libglx-nvidia0 nvidia-alternative nvidia-detect nvidia-driver nvidia-driver-bin nvidia-driver-libs nvidia-kernel-dkms nvidia-kernel-source nvidia-open-kernel-dkms nvidia-open-kernel-source xserver-xorg-video-nvidia
-> ```
-> If any residual files remain, search for them using `apt search nvidia-driver`.
-
-**[`^        back to top        ^`](#table-of-contents)**
-
-
 # **Installation**
 
 First, clone the repository:
@@ -475,6 +202,8 @@ COMMON_PATH=/YOUR_PATH/Isyrr
 TZ=Europe/Paris
 PUID=1000
 PGID=1000
+# Optional
+JELLYFIN_PUBLISHED_SERVER_URL=
 ```
 
 Validate the stack configuration before starting containers:
@@ -487,13 +216,13 @@ To start the installation, execute:
 
 ```bash
 cd compose_files/
-docker compose -f docker-compose-nvidia.yaml up -d
+docker compose -f docker-compose.yaml up -d
 ```
 
-[Go to the file here](compose_files/docker-compose-nvidia.yaml)
+[Go to the file here](compose_files/docker-compose.yaml)
 
 > [!NOTE]
-> This setup includes NVIDIA GPU support for hardware transcoding in Jellyfin and Plex.
+> Jellyfin transcodes on CPU by default. Optional Intel/AMD VAAPI is available via `/dev/dri` if present on the host.
 
 **[`^        back to top        ^`](#table-of-contents)**
 
@@ -506,7 +235,6 @@ Once the applications are deployed, you can access them using the following addr
 
 
 * Jellyfin : http://localhost:8096
-* Plex : http://localhost:32400/web
 * Seerr : http://localhost:5055
 * Sonarr : http://localhost:8989
 * Radarr : http://localhost:7878
@@ -825,11 +553,11 @@ If you want other users to access your Jellyfin server, you can create additiona
 
 # **Updating Applications**
 
-The compose stack includes [Watchtower](https://github.com/nicholas-fedor/watchtower) (`watchtower` service), using the maintained [`nickfedor/watchtower`](https://hub.docker.com/r/nickfedor/watchtower) image so it works with current Docker Engine APIs (the original `containrrr/watchtower` image is unmaintained and errors on Docker 29+). It runs on a schedule, pulls newer images for labeled services, recreates those containers, and prunes old images (`WATCHTOWER_CLEANUP`). Only containers with the label `com.centurylinklabs.watchtower.enable=true` are updated (all services in `compose_files/docker-compose-nvidia.yaml` inherit this from shared defaults), so other containers on the same Docker host are not touched. If you upgraded the compose file after containers were already created, recreate them once so the label is applied (for example `docker compose ... up -d --force-recreate`).
+The compose stack includes [Watchtower](https://github.com/nicholas-fedor/watchtower) (`watchtower` service), using the maintained [`nickfedor/watchtower`](https://hub.docker.com/r/nickfedor/watchtower) image so it works with current Docker Engine APIs (the original `containrrr/watchtower` image is unmaintained and errors on Docker 29+). It runs on a schedule, pulls newer images for labeled services, recreates those containers, and prunes old images (`WATCHTOWER_CLEANUP`). Only containers with the label `com.centurylinklabs.watchtower.enable=true` are updated (all services in `compose_files/docker-compose.yaml` inherit this from shared defaults), so other containers on the same Docker host are not touched. If you upgraded the compose file after containers were already created, recreate them once so the label is applied (for example `docker compose ... up -d --force-recreate`).
 
-- Bring the updater online (from `compose_files` with your `.env` loaded): `docker compose -f docker-compose-nvidia.yaml up -d watchtower`
+- Bring the updater online (from `compose_files` with your `.env` loaded): `docker compose -f docker-compose.yaml up -d watchtower`
 - Optional: set `WATCHTOWER_POLL_INTERVAL` (seconds; default `21600` = every 6 hours while the host is on) or `WATCHTOWER_SCHEDULE` (6-field cron, quoted) in `compose_files/.env`. See `compose_files/.env.example`.
-- One-off update of all labeled containers: `docker compose -f docker-compose-nvidia.yaml run --rm watchtower --run-once`
+- One-off update of all labeled containers: `docker compose -f docker-compose.yaml run --rm watchtower --run-once`
 - Logs: `docker logs -f watchtower`
 
 **Manual updates** (if you prefer not to use Watchtower): stop the stack, remove old images, and recreate:
