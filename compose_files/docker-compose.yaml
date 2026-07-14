@@ -153,7 +153,8 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
-      JELLYFIN_PublishedServerUrl: ${JELLYFIN_PUBLISHED_SERVER_URL}
+      # Optional public URL for remote clients (e.g. http://192.168.1.10:8096)
+      JELLYFIN_PublishedServerUrl: ${JELLYFIN_PUBLISHED_SERVER_URL:-}
     ports:
       - 8096:8096
       - 8920:8920
@@ -166,6 +167,7 @@ services:
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
       - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
+    # Optional Intel/AMD VAAPI. Comment out if /dev/dri is absent on the host.
     devices:
       - /dev/dri:/dev/dri
   seerr:

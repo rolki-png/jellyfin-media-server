@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="${SCRIPT_DIR}/docker-compose-nvidia.yaml"
+COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yaml"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/.env"
 EXAMPLE_ENV_FILE="${SCRIPT_DIR}/.env.example"
 CI_MODE=false
