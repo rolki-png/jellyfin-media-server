@@ -6,6 +6,12 @@
 *.env
 .env.*
 !.env.example
+
+# Secrets and local service config
 compose_files/recyclarr/secrets.yml
 compose_files/configs/unpackerr/
-compose_files/recyclarr/secrets.yml
+
+# Recyclarr runtime (logs, cached TRaSH guides, instance-specific sync state)
+compose_files/recyclarr/logs/
+compose_files/recyclarr/resources/
+compose_files/recyclarr/state/
