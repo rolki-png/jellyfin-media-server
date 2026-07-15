@@ -169,15 +169,51 @@ services:
       - 5055:5055
     volumes:
       - ${COMMON_PATH}/configs/jellyseerr:/app/config
+  plex-init:
+    image: alpine:latest
+    container_name: plex-init
+    user: "0:0"
+    # Point Plex transcode cache at /transcode (local disk), not mergerfs under /config.
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        chown -R ${PUID:-1000}:${PGID:-1000} /config /transcode
+        cache="/config/Library/Application Support/Plex Media Server/Cache"
+        mkdir -p "$cache"
+        rm -rf "$cache/Transcode"
+        ln -sf /transcode "$cache/Transcode"
+        prefs="$cache/../Preferences.xml"
+        if [ -f "$prefs" ] && ! grep -q 'TranscoderTempDirectory="/transcode"' "$prefs"; then
+          sed -i 's/TranscoderTempDirectory="[^"]*"/TranscoderTempDirectory="\/transcode"/' "$prefs" || \
+          sed -i 's/<Preferences /<Preferences TranscoderTempDirectory="\/transcode" /' "$prefs"
+        fi
+        echo "plex-init: transcode cache -> /transcode, chowned to ${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ${COMMON_PATH}/configs/plex:/config
+      - ${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}:/transcode
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
   plex:
     <<: [*service-defaults, *mem-2g]
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
+    depends_on:
+      plex-init:
+        condition: service_completed_successfully
     environment:
       <<: *linuxserver-env
       VERSION: docker
       PLEX_CLAIM: ${PLEX_CLAIM:-}
-      # Helps Xbox/TV clients discover the server on LAN (set in .env).
+      # LAN URL for Xbox/TV clients; set PLEX_ADVERTISE_IP in .env (see .env.example).
       ADVERTISE_IP: ${PLEX_ADVERTISE_IP:-}
     ports:
       - 32400:32400
@@ -187,7 +223,9 @@ services:
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
       - ${COMMON_PATH}/configs/plex:/config
-      - ${COMMON_PATH}/plex/transcode:/transcode
+      # Keep transcode off mergerfs — FUSE is too slow for live streams.
+      # homelab-setup.sh sets Plex TranscoderTempDirectory=/transcode; mount must be local disk.
+      - ${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}:/transcode
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
     devices:

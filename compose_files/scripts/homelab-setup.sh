@@ -251,6 +251,126 @@ remove_empty_plex_dir() {
   fi
 }
 
+plex_preferences_path() {
+  echo "${COMMON_PATH}/configs/plex/Library/Application Support/Plex Media Server/Preferences.xml"
+}
+
+plex_auth_token() {
+  local prefs
+  prefs="$(plex_preferences_path)"
+  if [[ ! -f "${prefs}" ]]; then
+    return 1
+  fi
+  grep -oP 'PlexOnlineToken="\K[^"]+' "${prefs}" || true
+}
+
+fix_plex_transcode_dir() {
+  local transcode_dir="${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}"
+  local prefs
+  prefs="$(plex_preferences_path)"
+
+  log "Ensuring Plex transcode directory (${transcode_dir})"
+  mkdir -p "${transcode_dir}"
+  chown "${PUID:-1000}:${PGID:-1000}" "${transcode_dir}"
+
+  if [[ ! -f "${prefs}" ]]; then
+    log "Plex preferences not found yet — skipping transcode path setup"
+    return 0
+  fi
+
+  PREFS="${prefs}" python3 - <<'PY'
+import os, re
+path = os.environ["PREFS"]
+with open(path, encoding="utf-8") as f:
+    xml = f.read()
+target = "/transcode"
+if re.search(r'TranscoderTempDirectory="[^"]*"', xml):
+    updated = re.sub(
+        r'TranscoderTempDirectory="[^"]*"',
+        f'TranscoderTempDirectory="{target}"',
+        xml,
+    )
+else:
+    updated = xml.replace(
+        "<Preferences ",
+        f'<Preferences TranscoderTempDirectory="{target}" ',
+        1,
+    )
+if updated != xml:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(updated)
+PY
+  log "Set Plex TranscoderTempDirectory to /transcode (host: ${transcode_dir})"
+}
+
+ensure_plex_notification() {
+  local port=$1
+  local key=$2
+  local name=$3
+
+  if ! docker ps --format '{{.Names}}' | grep -qx plex; then
+    log "Plex not running — skipping ${name} Plex notification setup"
+    return 0
+  fi
+
+  local token host
+  token="$(plex_auth_token || true)"
+  if [[ -z "${token}" ]]; then
+    log "Plex token not found — complete Plex sign-in, then re-run homelab-setup"
+    return 0
+  fi
+
+  host="${PLEX_INTERNAL_HOST:-plex}"
+  if curl -sf -H "X-Api-Key: ${key}" "http://localhost:${port}/api/v3/notification" \
+    | python3 -c "import json,sys; sys.exit(0 if any(n.get('implementation')=='PlexServer' for n in json.load(sys.stdin)) else 1)"; then
+    log "${name} Plex notification already configured"
+    return 0
+  fi
+
+  log "Configuring ${name} Plex library refresh notification"
+  curl -sf --max-time 30 -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
+    -X POST "http://localhost:${port}/api/v3/notification" \
+    -d "$(TOKEN="${token}" HOST="${host}" python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "name": "Plex",
+    "implementation": "PlexServer",
+    "configContract": "PlexServerSettings",
+    "onDownload": True,
+    "onUpgrade": True,
+    "onRename": True,
+    "fields": [
+        {"name": "host", "value": os.environ["HOST"]},
+        {"name": "port", "value": 32400},
+        {"name": "useSsl", "value": False},
+        {"name": "authToken", "value": os.environ["TOKEN"]},
+        {"name": "updateLibrary", "value": True},
+    ],
+    "tags": [],
+}))
+PY
+)" >/dev/null || {
+    log "${name} Plex notification setup failed — configure Plex under Settings → Connect in ${name}"
+    return 0
+  }
+}
+
+trigger_plex_library_scan() {
+  if ! docker ps --format '{{.Names}}' | grep -qx plex; then
+    return 0
+  fi
+
+  local token
+  token="$(plex_auth_token || true)"
+  if [[ -z "${token}" ]]; then
+    return 0
+  fi
+
+  log "Triggering Plex library scan"
+  curl -sf --max-time 10 -X POST "http://localhost:32400/library/sections/3/refresh?X-Plex-Token=${token}" >/dev/null || true
+  curl -sf --max-time 10 -X POST "http://localhost:32400/library/sections/4/refresh?X-Plex-Token=${token}" >/dev/null || true
+}
+
 main() {
   log "Homelab setup (COMMON_PATH=${COMMON_PATH})"
   setup_qbit_categories
@@ -264,6 +384,10 @@ main() {
   write_recyclarr_secrets
   write_unpackerr_secrets
   remove_empty_plex_dir
+  fix_plex_transcode_dir
+  ensure_plex_notification 7878 "${RADARR_KEY}" Radarr
+  ensure_plex_notification 8989 "${SONARR_KEY}" Sonarr
+  trigger_plex_library_scan
 
   if docker ps --format '{{.Names}}' | grep -qx qbittorrent; then
     log "Restarting qBittorrent for category path changes"
