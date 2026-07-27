@@ -1,0 +1,23 @@
+[Unit]
+Description=Media Server Docker Compose (hardlink-safe *arr stack)
+Documentation=file:///home/rolki/projects/All-jellyfin-media-server/compose_files/systemd/README.md
+Requires=docker.service
+# Disks + mergerfs must be up before containers bind COMMON_PATH / branch roots.
+RequiresMountsFor=/mnt/combined-media /mnt/samsung-media /mnt/4tb-media-2
+After=docker.service network-online.target mnt-combined\x2dmedia.mount mnt-samsung\x2dmedia.mount mnt-4tb\x2dmedia\x2d2.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/rolki/projects/All-jellyfin-media-server/compose_files
+EnvironmentFile=-/home/rolki/projects/All-jellyfin-media-server/compose_files/.env
+# Bring stack up from the repo compose (script mounts, branch roots, COMMON_PATH).
+ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose-nvidia.yaml up -d
+# Re-assert Radarr/Sonarr hardlink policy after APIs are up (idempotent).
+ExecStartPost=/home/rolki/projects/All-jellyfin-media-server/compose_files/scripts/boot-ensure-hardlink-policy.sh
+# Stop containers on shutdown; do NOT `down` (that removes them and races plex-init on next boot).
+ExecStop=/usr/bin/docker compose --env-file .env -f docker-compose-nvidia.yaml stop
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -34,6 +34,11 @@ x-mem-2g: &mem-2g
   mem_limit: 2g
   memswap_limit: 2g
 
+# Plex gets extra headroom for library analysis vs active streams.
+x-mem-3g: &mem-3g
+  mem_limit: 3g
+  memswap_limit: 3g
+
 services:
   qbittorrent:
     <<: [*service-defaults, *mem-1g]
@@ -62,8 +67,11 @@ services:
       CAPTCHA_SOLVER: ${CAPTCHA_SOLVER:-none}
     ports:
       - 8191:8191
+  # Parked by default — Sonarr/Radarr use Jackett Torznab, not Prowlarr sync.
+  # Bring back: COMPOSE_PROFILES=prowlarr docker compose -f docker-compose-nvidia.yaml up -d prowlarr
   prowlarr:
     <<: [*service-defaults, *mem-512m]
+    profiles: ["prowlarr"]
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
     environment:
@@ -88,11 +96,18 @@ services:
     container_name: sonarr
     environment:
       <<: *linuxserver-env
+      COMMON_PATH: ${COMMON_PATH}
+      SAME_DISK_SSD_ROOT: ${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}
+      SAME_DISK_HDD_ROOT: ${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}
     volumes:
+      # Single COMMON_PATH mount so imports can hardlink downloads↔library
+      # (separate /tv and /downloads binds look like different filesystems to ln).
       - ${COMMON_PATH}:${COMMON_PATH}
       - ${COMMON_PATH}/configs/sonarr:/config
-      - ${COMMON_PATH}/sonarr/tv:/tv
-      - ${COMMON_PATH}/qbittorrent/downloads:/downloads
+      # Branch roots for same-disk-import.sh (lazy migrate + hardlink).
+      - ${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}:${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}
+      - ${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}:${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}
+      - ./scripts/same-disk-import.sh:/scripts/same-disk-import.sh:ro
     ports:
       - 8989:8989
   radarr:
@@ -101,14 +116,24 @@ services:
     container_name: radarr
     environment:
       <<: *linuxserver-env
+      COMMON_PATH: ${COMMON_PATH}
+      SAME_DISK_SSD_ROOT: ${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}
+      SAME_DISK_HDD_ROOT: ${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}
     volumes:
+      # Single COMMON_PATH mount so imports can hardlink downloads↔library
+      # (separate /movies and /downloads binds look like different filesystems to ln).
       - ${COMMON_PATH}:${COMMON_PATH}
       - ${COMMON_PATH}/configs/radarr:/config
-      - ${COMMON_PATH}/radarr/movies:/movies
-      - ${COMMON_PATH}/qbittorrent/downloads:/downloads
+      # Branch roots for same-disk-import.sh (lazy migrate + hardlink).
+      - ${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}:${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}
+      - ${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}:${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}
+      - ./scripts/same-disk-import.sh:/scripts/same-disk-import.sh:ro
     ports:
       - 7878:7878
+  # Parked by default (Plex-first). Bring back:
+  #   COMPOSE_PROFILES=jellyfin docker compose -f docker-compose-nvidia.yaml up -d jellyfin
   jellyfin-init:
+    profiles: ["jellyfin"]
     image: alpine:latest
     container_name: jellyfin-init
     user: "0:0"
@@ -136,6 +161,7 @@ services:
         max-file: "1"
   jellyfin:
     <<: [*service-defaults, *mem-2g]
+    profiles: ["jellyfin"]
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     depends_on:
@@ -174,6 +200,7 @@ services:
     container_name: plex-init
     user: "0:0"
     # Point Plex transcode cache at /transcode (local disk), not mergerfs under /config.
+    # $$ escapes shell vars so Compose does not interpolate $cache / $prefs as empty.
     command:
       - sh
       - -c
@@ -181,13 +208,13 @@ services:
         set -e
         chown -R ${PUID:-1000}:${PGID:-1000} /config /transcode
         cache="/config/Library/Application Support/Plex Media Server/Cache"
-        mkdir -p "$cache"
-        rm -rf "$cache/Transcode"
-        ln -sf /transcode "$cache/Transcode"
-        prefs="$cache/../Preferences.xml"
-        if [ -f "$prefs" ] && ! grep -q 'TranscoderTempDirectory="/transcode"' "$prefs"; then
-          sed -i 's/TranscoderTempDirectory="[^"]*"/TranscoderTempDirectory="\/transcode"/' "$prefs" || \
-          sed -i 's/<Preferences /<Preferences TranscoderTempDirectory="\/transcode" /' "$prefs"
+        mkdir -p "$$cache"
+        rm -rf "$$cache/Transcode"
+        ln -sf /transcode "$$cache/Transcode"
+        prefs="$$cache/../Preferences.xml"
+        if [ -f "$$prefs" ] && ! grep -q 'TranscoderTempDirectory="/transcode"' "$$prefs"; then
+          sed -i 's/TranscoderTempDirectory="[^"]*"/TranscoderTempDirectory="\/transcode"/' "$$prefs" || \
+          sed -i 's/<Preferences /<Preferences TranscoderTempDirectory="\/transcode" /' "$$prefs"
         fi
         echo "plex-init: transcode cache -> /transcode, chowned to ${PUID:-1000}:${PGID:-1000}"
     volumes:
@@ -203,7 +230,7 @@ services:
         max-size: "1m"
         max-file: "1"
   plex:
-    <<: [*service-defaults, *mem-2g]
+    <<: [*service-defaults, *mem-3g]
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
     depends_on:
@@ -220,6 +247,11 @@ services:
       - 32400:32400/udp
       - 32469:32469
       - 32469:32469/udp
+      # GDM LAN discovery (Xbox / nearby clients)
+      - 32410:32410/udp
+      - 32412:32412/udp
+      - 32413:32413/udp
+      - 32414:32414/udp
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
       - ${COMMON_PATH}/configs/plex:/config
@@ -233,6 +265,7 @@ services:
   watchtower:
     <<: [*service-defaults, *mem-256m]
     # containrrr/watchtower is unmaintained and fails on Docker 29+ (API min 1.40+).
+    # Use the maintained nickfedor fork: https://watchtower.nickfedor.com/
     image: nickfedor/watchtower:latest
     container_name: watchtower
     environment:
@@ -241,8 +274,14 @@ services:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_INCLUDE_STOPPED: "false"
       WATCHTOWER_REVIVE_STOPPED: "false"
-      WATCHTOWER_ROLLING_RESTART: "true"
+      # Rolling restart is incompatible with Compose depends_on (plex/jellyfin init).
+      # See https://watchtower.nickfedor.com/latest/advanced-features/linked-containers/
+      WATCHTOWER_ROLLING_RESTART: "false"
       WATCHTOWER_TIMEOUT: "120s"
-      WATCHTOWER_SCHEDULE: "${WATCHTOWER_SCHEDULE:-0 0 4 * * *}"
+      # Poll while the host is on (default 6h). Do not set both poll interval and schedule.
+      # For a fixed daily time instead: set WATCHTOWER_SCHEDULE in .env and clear
+      # WATCHTOWER_POLL_INTERVAL (empty) so this default is unused.
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-21600}
+      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

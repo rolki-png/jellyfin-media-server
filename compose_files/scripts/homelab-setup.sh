@@ -83,13 +83,145 @@ PY
   updated="$(CURRENT="${current}" python3 - <<'PY'
 import json, os
 client = json.loads(os.environ["CURRENT"])[0]
-client["removeCompletedDownloads"] = True
+# Keep completed torrents so qBit can seed via hardlinked library files.
+client["removeCompletedDownloads"] = False
 client["removeFailedDownloads"] = True
 print(json.dumps(client))
 PY
 )"
   curl -sf -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
     -X PUT "http://localhost:${port}/api/v3/downloadclient/${id}" -d "${updated}" >/dev/null
+}
+
+ensure_root_folder() {
+  local port=$1
+  local key=$2
+  local name=$3
+  local path=$4
+
+  log "Ensuring ${name} root folder ${path}"
+  local existing
+  existing="$(curl -sf -H "X-Api-Key: ${key}" "http://localhost:${port}/api/v3/rootfolder")"
+  if EXISTING="${existing}" WANT="${path}" python3 - <<'PY'
+import json, os, sys
+want = os.environ["WANT"].rstrip("/")
+roots = json.loads(os.environ["EXISTING"])
+sys.exit(0 if any(r.get("path", "").rstrip("/") == want for r in roots) else 1)
+PY
+  then
+    log "${name} root folder already set"
+    return 0
+  fi
+  mkdir -p "${path}"
+  curl -sf -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
+    -X POST "http://localhost:${port}/api/v3/rootfolder" \
+    -d "{\"path\":\"${path}\"}" >/dev/null
+}
+
+ensure_remote_path_mapping() {
+  local port=$1
+  local key=$2
+  local name=$3
+  local host="${4:-qbittorrent}"
+  local remote="${5:-/downloads/}"
+  local local_path="${6:-${COMMON_PATH}/qbittorrent/downloads/}"
+
+  log "Ensuring ${name} remote path mapping ${remote} -> ${local_path}"
+  local existing
+  existing="$(curl -sf -H "X-Api-Key: ${key}" "http://localhost:${port}/api/v3/remotepathmapping")"
+  if EXISTING="${existing}" HOST="${host}" REMOTE="${remote}" LOCAL="${local_path}" python3 - <<'PY'
+import json, os, sys
+rows = json.loads(os.environ["EXISTING"])
+host = os.environ["HOST"]
+remote = os.environ["REMOTE"].rstrip("/") + "/"
+local = os.environ["LOCAL"].rstrip("/") + "/"
+sys.exit(0 if any(
+    r.get("host") == host
+    and r.get("remotePath", "").rstrip("/") + "/" == remote
+    and r.get("localPath", "").rstrip("/") + "/" == local
+    for r in rows
+) else 1)
+PY
+  then
+    log "${name} remote path mapping already set"
+    return 0
+  fi
+  curl -sf -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
+    -X POST "http://localhost:${port}/api/v3/remotepathmapping" \
+    -d "$(HOST="${host}" REMOTE="${remote}" LOCAL="${local_path}" python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "host": os.environ["HOST"],
+    "remotePath": os.environ["REMOTE"],
+    "localPath": os.environ["LOCAL"],
+}))
+PY
+)" >/dev/null
+}
+
+ensure_same_disk_script() {
+  local port=$1
+  local key=$2
+  local name=$3
+  local script_path="/scripts/same-disk-import.sh"
+
+  log "Ensuring ${name} same-disk Custom Script Connect"
+  local existing
+  existing="$(curl -sf -H "X-Api-Key: ${key}" "http://localhost:${port}/api/v3/notification")"
+  local match_id
+  match_id="$(EXISTING="${existing}" PATH_WANT="${script_path}" python3 - <<'PY'
+import json, os
+want = os.environ["PATH_WANT"]
+for n in json.loads(os.environ["EXISTING"]):
+    if n.get("implementation") != "CustomScript":
+        continue
+    fields = {f.get("name"): f.get("value") for f in n.get("fields", [])}
+    if fields.get("path") == want:
+        print(n["id"])
+        break
+PY
+)"
+
+  local payload
+  payload="$(NAME="${name}" PATH_WANT="${script_path}" python3 - <<'PY'
+import json, os
+name = os.environ["NAME"]
+# Sonarr supports onImportComplete; Radarr schema omits it — only set for Sonarr.
+body = {
+    "name": "Same-disk hardlink",
+    "implementation": "CustomScript",
+    "configContract": "CustomScriptSettings",
+    "onDownload": True,
+    "onUpgrade": True,
+    "onRename": False,
+    "fields": [
+        {"name": "path", "value": os.environ["PATH_WANT"]},
+    ],
+    "tags": [],
+}
+if name == "Sonarr":
+    body["onImportComplete"] = True
+print(json.dumps(body))
+PY
+)"
+
+  if [[ -n "${match_id}" ]]; then
+    curl -sf -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
+      -X PUT "http://localhost:${port}/api/v3/notification/${match_id}" \
+      -d "$(PAYLOAD="${payload}" ID="${match_id}" python3 - <<'PY'
+import json, os
+body = json.loads(os.environ["PAYLOAD"])
+body["id"] = int(os.environ["ID"])
+print(json.dumps(body))
+PY
+)" >/dev/null
+    log "${name} same-disk script notification updated (id=${match_id})"
+  else
+    curl -sf -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
+      -X POST "http://localhost:${port}/api/v3/notification" \
+      -d "${payload}" >/dev/null
+    log "${name} same-disk script notification created"
+  fi
 }
 
 clear_stuck_queue() {
@@ -126,16 +258,17 @@ PY
 }
 
 trigger_download_scan() {
-  log "Triggering download folder scans"
+  local downloads="${COMMON_PATH}/qbittorrent/downloads"
+  log "Triggering download folder scans (${downloads})"
   curl -sf -H "X-Api-Key: ${RADARR_KEY}" -H "Content-Type: application/json" \
     -X POST http://localhost:7878/api/v3/command \
-    -d '{"name":"DownloadedMoviesScan","path":"/downloads","importMode":"Auto"}' >/dev/null || true
+    -d "{\"name\":\"DownloadedMoviesScan\",\"path\":\"${downloads}\",\"importMode\":\"Auto\"}" >/dev/null || true
   curl -sf -H "X-Api-Key: ${RADARR_KEY}" -H "Content-Type: application/json" \
     -X POST http://localhost:7878/api/v3/command \
     -d '{"name":"RefreshMonitoredDownloads"}' >/dev/null || true
   curl -sf -H "X-Api-Key: ${SONARR_KEY}" -H "Content-Type: application/json" \
     -X POST http://localhost:8989/api/v3/command \
-    -d '{"name":"DownloadedEpisodesScan","path":"/downloads","importMode":"Auto"}' >/dev/null || true
+    -d "{\"name\":\"DownloadedEpisodesScan\",\"path\":\"${downloads}\",\"importMode\":\"Auto\"}" >/dev/null || true
   curl -sf -H "X-Api-Key: ${SONARR_KEY}" -H "Content-Type: application/json" \
     -X POST http://localhost:8989/api/v3/command \
     -d '{"name":"RefreshMonitoredDownloads"}' >/dev/null || true
@@ -376,8 +509,14 @@ main() {
   setup_qbit_categories
   fix_radarr_media
   fix_sonarr_media
+  ensure_root_folder 7878 "${RADARR_KEY}" Radarr "${COMMON_PATH}/radarr/movies"
+  ensure_root_folder 8989 "${SONARR_KEY}" Sonarr "${COMMON_PATH}/sonarr/tv"
+  ensure_remote_path_mapping 7878 "${RADARR_KEY}" Radarr
+  ensure_remote_path_mapping 8989 "${SONARR_KEY}" Sonarr
   fix_download_client 7878 "${RADARR_KEY}" Radarr
   fix_download_client 8989 "${SONARR_KEY}" Sonarr
+  ensure_same_disk_script 7878 "${RADARR_KEY}" Radarr
+  ensure_same_disk_script 8989 "${SONARR_KEY}" Sonarr
   clear_stuck_queue 7878 "${RADARR_KEY}" Radarr
   clear_stuck_queue 8989 "${SONARR_KEY}" Sonarr
   trigger_download_scan

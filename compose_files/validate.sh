@@ -73,8 +73,97 @@ fi
 
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >/dev/null
 
+SCRIPT_PATH="${SCRIPT_DIR}/scripts/same-disk-import.sh"
+if [[ ! -f "${SCRIPT_PATH}" ]]; then
+  fail "Missing same-disk import script: ${SCRIPT_PATH}"
+fi
+if [[ ! -x "${SCRIPT_PATH}" ]]; then
+  fail "same-disk import script is not executable: ${SCRIPT_PATH}"
+fi
+
+# *arr must share one filesystem view for library + downloads so hardlinks work.
+# Separate /movies|/tv + /downloads binds cause EXDEV and force copies.
+tmp_config="$(mktemp)"
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >"${tmp_config}"
+python3 - "${tmp_config}" <<'PY' || { rm -f "${tmp_config}"; fail "Radarr/Sonarr volume layout invalid (see above)"; }
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+try:
+    import yaml
+    data = yaml.safe_load(text)
+except Exception as exc:
+    print(f"ERROR: cannot parse compose config: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+bad_targets = {"/movies", "/tv", "/downloads"}
+ok = True
+for svc in ("radarr", "sonarr"):
+    vols = data.get("services", {}).get(svc, {}).get("volumes") or []
+    targets = []
+    sources = []
+    for v in vols:
+        if isinstance(v, dict):
+            targets.append(str(v.get("target") or ""))
+            sources.append(str(v.get("source") or ""))
+        else:
+            parts = str(v).split(":")
+            sources.append(parts[0] if parts else "")
+            targets.append(parts[1] if len(parts) > 1 else "")
+    if bad_targets.intersection(targets):
+        print(f"ERROR: {svc} must not bind /movies, /tv, or /downloads separately (breaks hardlinks). targets={targets}", file=sys.stderr)
+        ok = False
+    if not any("same-disk-import.sh" in s or "same-disk-import.sh" in t for s, t in zip(sources, targets)):
+        print(f"ERROR: {svc} must mount same-disk-import.sh under /scripts/", file=sys.stderr)
+        ok = False
+sys.exit(0 if ok else 1)
+PY
+rm -f "${tmp_config}"
+
 if [[ "${CI_MODE}" == "false" && ! -d "${COMMON_PATH}" ]]; then
   warn "COMMON_PATH does not exist yet (${COMMON_PATH}). Create it before running 'docker compose up -d'."
+fi
+
+# Live hardlink probe: library and downloads must share a device via COMMON_PATH.
+if [[ "${CI_MODE}" == "false" && -d "${COMMON_PATH}/radarr/movies" && -d "${COMMON_PATH}/qbittorrent/downloads" ]]; then
+  probe_dir="${COMMON_PATH}/.hardlink-probe-$$"
+  mkdir -p "${probe_dir}/lib" "${probe_dir}/dl"
+  echo probe > "${probe_dir}/dl/a.bin"
+  if ln "${probe_dir}/dl/a.bin" "${probe_dir}/lib/a.bin" 2>/dev/null; then
+    echo "Hardlink probe OK under ${COMMON_PATH}"
+  else
+    rm -rf "${probe_dir}"
+    fail "Hardlink probe failed under ${COMMON_PATH} (library/downloads not same filesystem view)"
+  fi
+  rm -rf "${probe_dir}"
+fi
+
+# Host boot unit must re-apply policy and wait for mergerfs (skip in CI).
+if [[ "${CI_MODE}" == "false" ]]; then
+  unit_src="${SCRIPT_DIR}/systemd/media-server.service"
+  unit_dst="/etc/systemd/system/media-server.service"
+  if [[ ! -f "${unit_src}" ]]; then
+    fail "Missing ${unit_src}"
+  fi
+  if [[ ! -f "${unit_dst}" ]]; then
+    fail "media-server.service not installed at ${unit_dst}. See compose_files/systemd/README.md"
+  fi
+  if ! grep -q 'boot-ensure-hardlink-policy.sh' "${unit_dst}"; then
+    fail "${unit_dst} is outdated (missing boot-ensure-hardlink-policy.sh). Reinstall from compose_files/systemd/"
+  fi
+  if ! grep -q 'RequiresMountsFor=' "${unit_dst}"; then
+    fail "${unit_dst} is outdated (missing RequiresMountsFor). Reinstall from compose_files/systemd/"
+  fi
+  if ! systemctl is-enabled media-server >/dev/null 2>&1; then
+    fail "media-server.service is not enabled (will not start on boot)"
+  fi
+  if findmnt -n "${COMMON_PATH}/qbittorrent/downloads" >/dev/null 2>&1; then
+    fail "${COMMON_PATH}/qbittorrent/downloads is a separate mount; keep the SSD bind commented in /etc/fstab"
+  fi
+  if ! grep -E '^[^#]*fuse\.mergerfs' /etc/fstab | grep -q 'category.create=epmfs'; then
+    warn "fstab mergerfs line should include category.create=epmfs (HDD-first creates)"
+  fi
 fi
 
 echo "Compose validation succeeded using env file: ${ENV_FILE}"
