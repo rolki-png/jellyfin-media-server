@@ -2,7 +2,8 @@
 x-service-defaults: &service-defaults
   restart: unless-stopped
   logging:
-    driver: json-file
+    # Docker's current default-class driver; built-in rotation (replaces json-file).
+    driver: local
     options:
       max-size: "10m"
       max-file: "3"
@@ -18,6 +19,8 @@ x-tz-env: &tz-env
   TZ: ${TZ:-Etc/UTC}
 
 # Cap container memory to reduce cgroup memory-accounting pressure (see kswapd bad-page freezes).
+# mem_limit == memswap_limit disables swap. deploy.resources.limits.memory cannot set that,
+# so these Compose service keys are intentional, not leftovers from Swarm-era files.
 x-mem-256m: &mem-256m
   mem_limit: 256m
   memswap_limit: 256m
@@ -64,11 +67,11 @@ services:
       <<: *tz-env
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_HTML: ${LOG_HTML:-false}
-      CAPTCHA_SOLVER: ${CAPTCHA_SOLVER:-none}
     ports:
-      - 8191:8191
+      # Jackett reaches FlareSolverr on the compose network; do not publish the solver to the LAN.
+      - 127.0.0.1:8191:8191
   # Parked by default — Sonarr/Radarr use Jackett Torznab, not Prowlarr sync.
-  # Bring back: COMPOSE_PROFILES=prowlarr docker compose -f docker-compose-nvidia.yaml up -d prowlarr
+  # Bring back: COMPOSE_PROFILES=prowlarr docker compose up -d prowlarr
   prowlarr:
     <<: [*service-defaults, *mem-512m]
     profiles: ["prowlarr"]
@@ -131,7 +134,7 @@ services:
     ports:
       - 7878:7878
   # Parked by default (Plex-first). Bring back:
-  #   COMPOSE_PROFILES=jellyfin docker compose -f docker-compose-nvidia.yaml up -d jellyfin
+  #   COMPOSE_PROFILES=jellyfin docker compose up -d jellyfin
   jellyfin-init:
     profiles: ["jellyfin"]
     image: alpine:latest
@@ -155,10 +158,11 @@ services:
       PGID: ${PGID:-1000}
     restart: "no"
     logging:
-      driver: json-file
+      driver: local
       options:
         max-size: "1m"
-        max-file: "1"
+        max-file: "2"
+        compress: "false"
   jellyfin:
     <<: [*service-defaults, *mem-2g]
     profiles: ["jellyfin"]
@@ -184,51 +188,54 @@ services:
     # Intel iGPU (VAAPI/QSV) for hardware transcoding — no discrete GPU required.
     devices:
       - /dev/dri:/dev/dri
-  jellyseerr:
+  # Jellyseerr/Overseerr merged into Seerr. Same config dir; first start migrates automatically.
+  # https://docs.seerr.dev/migration-guide/
+  seerr:
     <<: [*service-defaults, *mem-512m]
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
+    image: ghcr.io/seerr-team/seerr:latest
+    init: true
+    container_name: seerr
     environment:
       <<: *tz-env
-      LOG_LEVEL: ${JELLYSEERR_LOG_LEVEL:-debug}
+      LOG_LEVEL: ${SEERR_LOG_LEVEL:-debug}
+      PORT: 5055
     ports:
       - 5055:5055
     volumes:
       - ${COMMON_PATH}/configs/jellyseerr:/app/config
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:5055/api/v1/settings/public",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
   plex-init:
     image: alpine:latest
     container_name: plex-init
     user: "0:0"
-    # Point Plex transcode cache at /transcode (local disk), not mergerfs under /config.
-    # $$ escapes shell vars so Compose does not interpolate $cache / $prefs as empty.
-    command:
-      - sh
-      - -c
-      - |
-        set -e
-        chown -R ${PUID:-1000}:${PGID:-1000} /config /transcode
-        cache="/config/Library/Application Support/Plex Media Server/Cache"
-        mkdir -p "$$cache"
-        rm -rf "$$cache/Transcode"
-        ln -sf /transcode "$$cache/Transcode"
-        prefs="$$cache/../Preferences.xml"
-        if [ -f "$$prefs" ] && ! grep -q 'TranscoderTempDirectory="/transcode"' "$$prefs"; then
-          sed -i 's/TranscoderTempDirectory="[^"]*"/TranscoderTempDirectory="\/transcode"/' "$$prefs" || \
-          sed -i 's/<Preferences /<Preferences TranscoderTempDirectory="\/transcode" /' "$$prefs"
-        fi
-        echo "plex-init: transcode cache -> /transcode, chowned to ${PUID:-1000}:${PGID:-1000}"
+    command: ["/bin/sh", "/scripts/plex-init.sh"]
     volumes:
       - ${COMMON_PATH}/configs/plex:/config
       - ${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}:/transcode
+      - ./scripts/plex-init.sh:/scripts/plex-init.sh:ro
     environment:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
     restart: "no"
     logging:
-      driver: json-file
+      driver: local
       options:
         max-size: "1m"
-        max-file: "1"
+        max-file: "2"
+        compress: "false"
   plex:
     <<: [*service-defaults, *mem-3g]
     image: lscr.io/linuxserver/plex:latest
@@ -262,6 +269,46 @@ services:
       - ${COMMON_PATH}/radarr/movies:/data/movies
     devices:
       - /dev/dri:/dev/dri
+  unpackerr:
+    <<: [*service-defaults, *mem-256m]
+    image: ghcr.io/unpackerr/unpackerr:latest
+    container_name: unpackerr
+    user: "${PUID:-1000}:${PGID:-1000}"
+    depends_on:
+      - radarr
+      - sonarr
+    environment:
+      <<: *tz-env
+      UN_LOG_LEVEL: info
+      UN_LOG_FILE: /config/unpackerr.log
+      UN_SONARR_0_URL: http://sonarr:8989
+      UN_SONARR_0_API_KEY: filepath:/run/secrets/sonarr_api_key
+      UN_SONARR_0_TIMEOUT: 10s
+      UN_SONARR_0_PATHS_0: /downloads
+      UN_RADARR_0_URL: http://radarr:7878
+      UN_RADARR_0_API_KEY: filepath:/run/secrets/radarr_api_key
+      UN_RADARR_0_TIMEOUT: 10s
+      UN_RADARR_0_PATHS_0: /downloads
+    volumes:
+      - ${COMMON_PATH}/qbittorrent/downloads:/downloads
+      - ${COMMON_PATH}/configs/unpackerr:/config
+      - ${COMMON_PATH}/configs/unpackerr/radarr_api_key:/run/secrets/radarr_api_key:ro
+      - ${COMMON_PATH}/configs/unpackerr/sonarr_api_key:/run/secrets/sonarr_api_key:ro
+  recyclarr:
+    <<: [*service-defaults, *mem-256m]
+    # Recyclarr no longer publishes :latest. Major tag :8 receives 8.x updates.
+    # https://recyclarr.dev/guide/installation/docker/
+    image: ghcr.io/recyclarr/recyclarr:8
+    container_name: recyclarr
+    user: "${PUID:-1000}:${PGID:-1000}"
+    depends_on:
+      - radarr
+      - sonarr
+    environment:
+      <<: *tz-env
+      CRON_SCHEDULE: ${RECYCLARR_CRON_SCHEDULE:-@daily}
+    volumes:
+      - ./recyclarr:/config
   watchtower:
     <<: [*service-defaults, *mem-256m]
     # containrrr/watchtower is unmaintained and fails on Docker 29+ (API min 1.40+).

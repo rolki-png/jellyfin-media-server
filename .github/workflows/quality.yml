@@ -20,7 +20,25 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Run shellcheck
-        run: shellcheck setup-new-github-repo.sh compose_files/validate.sh
+        run: |
+          shellcheck setup-new-github-repo.sh \
+            compose_files/validate.sh \
+            compose_files/scripts/homelab-setup.sh \
+            compose_files/scripts/boot-ensure-hardlink-policy.sh \
+            compose_files/scripts/same-disk-import.sh \
+            compose_files/scripts/health-check.sh \
+            compose_files/scripts/plex-init.sh
+
+  stack-policy:
+    name: Stack policy tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run unittest
+        working-directory: compose_files/scripts
+        run: PYTHONPATH=. python3 -m unittest test_stack_policy -v
 
   compose-validate:
     name: Docker Compose validation

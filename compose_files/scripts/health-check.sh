@@ -20,12 +20,22 @@ echo "MergerFS: $(df -h /mnt/combined-media 2>/dev/null | awk 'NR==2 {print $3 "
 echo "Downloads: $(du -sh "${COMMON_PATH}/qbittorrent/downloads" 2>/dev/null | awk '{print $1}')"
 echo
 
-for svc in radarr sonarr jellyfin qbittorrent seerr prowlarr unpackerr recyclarr; do
+# Core always-on vs optional (compose profiles: jellyfin, prowlarr).
+for svc in plex radarr sonarr jackett qbittorrent flaresolverr seerr unpackerr recyclarr watchtower; do
   if docker ps --format '{{.Names}}' | grep -qx "${svc}"; then
     status="$(docker inspect --format '{{.State.Status}}' "${svc}" 2>/dev/null)"
     echo "[OK] ${svc}: ${status}"
   else
     echo "[--] ${svc}: not running"
+  fi
+done
+echo "--- optional (parked unless COMPOSE_PROFILES enables them) ---"
+for svc in jellyfin prowlarr; do
+  if docker ps --format '{{.Names}}' | grep -qx "${svc}"; then
+    status="$(docker inspect --format '{{.State.Status}}' "${svc}" 2>/dev/null)"
+    echo "[ON] ${svc}: ${status}"
+  else
+    echo "[parked] ${svc}"
   fi
 done
 echo

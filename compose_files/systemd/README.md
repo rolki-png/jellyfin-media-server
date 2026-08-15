@@ -3,8 +3,8 @@
 This unit keeps the hardlink-safe stack up across reboot/shutdown:
 
 1. Waits for mergerfs + SSD/HDD mounts (`RequiresMountsFor`).
-2. Runs `docker compose up -d` from this repo (script + branch mounts).
-3. Runs `scripts/boot-ensure-hardlink-policy.sh` → `homelab-setup.sh` to re-assert:
+2. Runs `docker compose -f docker-compose.yaml up -d` from this repo (script + branch mounts).
+3. Runs `scripts/boot-ensure-hardlink-policy.sh` → `homelab-setup.sh --mode=boot` (no queue wipes, Recyclarr, or qBittorrent restart):
    - `copyUsingHardlinks`
    - `removeCompletedDownloads=false`
    - root folders + remote path mappings

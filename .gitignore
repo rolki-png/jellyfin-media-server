@@ -15,3 +15,7 @@ compose_files/configs/unpackerr/
 compose_files/recyclarr/logs/
 compose_files/recyclarr/resources/
 compose_files/recyclarr/state/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/

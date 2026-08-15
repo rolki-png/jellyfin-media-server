@@ -59,5 +59,5 @@ if [[ "${ok}" -ne 1 ]]; then
   exit 1
 fi
 
-log "re-applying hardlink policy via homelab-setup.sh"
-exec "${SCRIPT_DIR}/homelab-setup.sh"
+log "re-applying hardlink policy via homelab-setup.sh --mode=boot"
+exec "${SCRIPT_DIR}/homelab-setup.sh" --mode=boot

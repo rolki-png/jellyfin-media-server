@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="${SCRIPT_DIR}/docker-compose-nvidia.yaml"
+COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yaml"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/.env"
 EXAMPLE_ENV_FILE="${SCRIPT_DIR}/.env.example"
 CI_MODE=false
@@ -84,41 +84,13 @@ fi
 # *arr must share one filesystem view for library + downloads so hardlinks work.
 # Separate /movies|/tv + /downloads binds cause EXDEV and force copies.
 tmp_config="$(mktemp)"
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >"${tmp_config}"
-python3 - "${tmp_config}" <<'PY' || { rm -f "${tmp_config}"; fail "Radarr/Sonarr volume layout invalid (see above)"; }
-import sys
-from pathlib import Path
-
-text = Path(sys.argv[1]).read_text()
-try:
-    import yaml
-    data = yaml.safe_load(text)
-except Exception as exc:
-    print(f"ERROR: cannot parse compose config: {exc}", file=sys.stderr)
-    sys.exit(1)
-
-bad_targets = {"/movies", "/tv", "/downloads"}
-ok = True
-for svc in ("radarr", "sonarr"):
-    vols = data.get("services", {}).get(svc, {}).get("volumes") or []
-    targets = []
-    sources = []
-    for v in vols:
-        if isinstance(v, dict):
-            targets.append(str(v.get("target") or ""))
-            sources.append(str(v.get("source") or ""))
-        else:
-            parts = str(v).split(":")
-            sources.append(parts[0] if parts else "")
-            targets.append(parts[1] if len(parts) > 1 else "")
-    if bad_targets.intersection(targets):
-        print(f"ERROR: {svc} must not bind /movies, /tv, or /downloads separately (breaks hardlinks). targets={targets}", file=sys.stderr)
-        ok = False
-    if not any("same-disk-import.sh" in s or "same-disk-import.sh" in t for s, t in zip(sources, targets)):
-        print(f"ERROR: {svc} must mount same-disk-import.sh under /scripts/", file=sys.stderr)
-        ok = False
-sys.exit(0 if ok else 1)
-PY
+if docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --format json >"${tmp_config}" 2>/dev/null; then
+  :
+else
+  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >"${tmp_config}"
+fi
+PYTHONPATH="${SCRIPT_DIR}/scripts" python3 -m stack_policy check-compose "${tmp_config}" \
+  || { rm -f "${tmp_config}"; fail "Radarr/Sonarr volume layout invalid (see above)"; }
 rm -f "${tmp_config}"
 
 if [[ "${CI_MODE}" == "false" && ! -d "${COMMON_PATH}" ]]; then
