@@ -493,8 +493,7 @@ from pathlib import Path
 from stack_policy.tautulli import apply_pms_ini, plex_connection_from_prefs
 
 prefs = Path(os.environ["PREFS"]).read_text(encoding="utf-8")
-ini_path = Path(os.environ["INI"])
-ini = ini_path.read_text(encoding="utf-8")
+ini = Path(os.environ["INI"]).read_text(encoding="utf-8")
 conn = plex_connection_from_prefs(prefs)
 updated = apply_pms_ini(
     ini,
@@ -503,16 +502,31 @@ updated = apply_pms_ini(
     name=conn["name"],
     host=os.environ["HOST"],
 )
-if updated != ini:
-    ini_path.write_text(updated, encoding="utf-8")
-    print("changed")
-else:
-    print("ok")
+print("changed" if updated != ini else "ok")
 PY
 )"
   if [[ "${changed}" == "changed" ]]; then
     log "Pointed Tautulli at Plex (${PLEX_INTERNAL_HOST:-plex}:32400) — restarting Tautulli (not Plex)"
-    docker restart tautulli >/dev/null
+    # Tautulli flushes in-memory config on stop and would overwrite a live edit.
+    docker stop tautulli >/dev/null
+    PREFS="${prefs}" INI="${cfg}" HOST="${PLEX_INTERNAL_HOST:-plex}" python3 - <<'PY'
+import os
+from pathlib import Path
+from stack_policy.tautulli import apply_pms_ini, plex_connection_from_prefs
+
+prefs = Path(os.environ["PREFS"]).read_text(encoding="utf-8")
+ini_path = Path(os.environ["INI"])
+conn = plex_connection_from_prefs(prefs)
+updated = apply_pms_ini(
+    ini_path.read_text(encoding="utf-8"),
+    token=conn["token"],
+    identifier=conn["identifier"],
+    name=conn["name"],
+    host=os.environ["HOST"],
+)
+ini_path.write_text(updated, encoding="utf-8")
+PY
+    docker start tautulli >/dev/null
     if ! wait_for_tautulli; then
       log "Tautulli did not come back after restart"
       return 0

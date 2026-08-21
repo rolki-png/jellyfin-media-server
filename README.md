@@ -22,7 +22,6 @@ Compose file: [`compose_files/docker-compose.yaml`](compose_files/docker-compose
 | Cloudflare helper | [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) (localhost only) | — |
 | Quality profiles | [Recyclarr](https://recyclarr.dev/) (TRaSH Guides, cron) | — |
 | Image updates | [Watchtower](https://watchtower.nickfedor.com/) (`nickfedor/watchtower`) | — |
-| Watch history | [Tautulli](https://tautulli.com/) → [SIMKL](https://simkl.com/apps/plex) | — |
 
 Bring parked services back:
 
