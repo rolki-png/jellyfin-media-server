@@ -16,6 +16,7 @@ from stack_policy.arr import (
     patch_media_management,
     quality_profile_id,
 )
+from stack_policy.bazarr import apply_direct_play_config
 from stack_policy.layout import check_compose_doc
 from stack_policy.plex_prefs import apply_host_prefs
 from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
@@ -59,6 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     p_plex = sub.add_parser("apply-plex-prefs")
     p_plex.add_argument("prefs_path")
     p_plex.add_argument("--advertise", default="")
+
+    p_bazarr = sub.add_parser("apply-bazarr-config")
+    p_bazarr.add_argument("config_path")
+    p_bazarr.add_argument("--sonarr-key", required=True)
+    p_bazarr.add_argument("--radarr-key", required=True)
 
     args = parser.parse_args(argv)
 
@@ -125,6 +131,19 @@ def main(argv: list[str] | None = None) -> int:
         xml = path.read_text(encoding="utf-8")
         updated = apply_host_prefs(xml, advertise_url=args.advertise)
         if updated != xml:
+            path.write_text(updated, encoding="utf-8")
+        return 0
+
+    if args.cmd == "apply-bazarr-config":
+        path = Path(args.config_path)
+        if not path.is_file():
+            print(f"ERROR: missing {path}", file=sys.stderr)
+            return 1
+        original = path.read_text(encoding="utf-8")
+        updated = apply_direct_play_config(
+            original, sonarr_apikey=args.sonarr_key, radarr_apikey=args.radarr_key
+        )
+        if updated != original:
             path.write_text(updated, encoding="utf-8")
         return 0
 

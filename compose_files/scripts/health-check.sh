@@ -21,7 +21,7 @@ echo "Downloads: $(du -sh "${COMMON_PATH}/qbittorrent/downloads" 2>/dev/null | a
 echo
 
 # Core always-on vs optional (compose profiles: jellyfin, prowlarr).
-for svc in plex radarr sonarr jackett qbittorrent flaresolverr seerr unpackerr recyclarr watchtower; do
+for svc in plex tautulli radarr sonarr jackett qbittorrent flaresolverr seerr unpackerr bazarr recyclarr watchtower; do
   if docker ps --format '{{.Names}}' | grep -qx "${svc}"; then
     status="$(docker inspect --format '{{.State.Status}}' "${svc}" 2>/dev/null)"
     echo "[OK] ${svc}: ${status}"

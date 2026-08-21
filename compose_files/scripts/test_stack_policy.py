@@ -17,7 +17,24 @@ from stack_policy.arr import (
 )
 from stack_policy.layout import check_arr_volumes, check_compose_doc
 from stack_policy.plex_prefs import apply_host_prefs, ensure_transcoder_temp
+from stack_policy.bazarr import apply_direct_play_config, english_language_profile
+from stack_policy.playback_compat import (
+    HARD_REJECT,
+    MIN_FORMAT_SCORE,
+    PREFERRED,
+    assigned_score,
+    score_for,
+)
 from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
+from stack_policy.tautulli import (
+    SIMKL_WATCHED_JSON,
+    WEBHOOK_AGENT_ID,
+    apply_pms_ini,
+    find_simkl_notifier_id,
+    plex_connection_from_prefs,
+    tautulli_api_key,
+    webhook_notifier_fields,
+)
 
 
 class LayoutTests(unittest.TestCase):
@@ -110,6 +127,34 @@ class ProfileNameTests(unittest.TestCase):
         self.assertIn(SONARR_QUALITY_PROFILE, yml)
 
 
+class PlaybackCompatTests(unittest.TestCase):
+    """Xbox Series X MKV Direct Play + Samsung U8000F HDMI decode."""
+
+    def test_truehd_and_dts_are_hard_rejects(self) -> None:
+        self.assertEqual(score_for("radarr", "496f355514737f7d83bf7aa4d24f8169"), HARD_REJECT)
+        self.assertEqual(score_for("radarr", "dcf3ec6938fa32445f590a4da84256cd"), HARD_REJECT)
+        self.assertEqual(score_for("sonarr", "0d7824bb924701997f874e7ff7d4844a"), HARD_REJECT)
+        self.assertEqual(score_for("sonarr", "c429417a57ea8c41d57e6990a8b0033f"), HARD_REJECT)
+
+    def test_ddplus_and_aac_are_preferred(self) -> None:
+        self.assertEqual(score_for("radarr", "185f1dd7264c4562b9022d963ac37424"), PREFERRED)
+        self.assertEqual(score_for("radarr", "240770601cc226190c367ef59aba7463"), PREFERRED)
+        self.assertEqual(score_for("sonarr", "63487786a8b01b7f20dd2bc90dd4a477"), PREFERRED)
+
+    def test_min_format_score_blocks_only_hard_rejects(self) -> None:
+        self.assertEqual(MIN_FORMAT_SCORE, -9999)
+        self.assertGreater(MIN_FORMAT_SCORE, HARD_REJECT)
+
+    def test_recyclarr_yaml_applies_scores(self) -> None:
+        yml = (Path(__file__).resolve().parents[1] / "recyclarr" / "recyclarr.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(assigned_score(yml, "496f355514737f7d83bf7aa4d24f8169"), HARD_REJECT)
+        self.assertEqual(assigned_score(yml, "185f1dd7264c4562b9022d963ac37424"), PREFERRED)
+        self.assertEqual(assigned_score(yml, "0d7824bb924701997f874e7ff7d4844a"), HARD_REJECT)
+        self.assertIn(f"min_format_score: {MIN_FORMAT_SCORE}", yml)
+
+
 class MainCliTests(unittest.TestCase):
     def test_check_compose_json_file(self) -> None:
         from stack_policy.__main__ import main
@@ -134,6 +179,103 @@ class MainCliTests(unittest.TestCase):
             json.dump(doc, fh)
             path = fh.name
         self.assertEqual(main(["check-compose", path]), 0)
+
+
+BAZARR_SAMPLE = """
+general:
+  use_sonarr: false
+  use_radarr: false
+  use_embedded_subs: true
+  ignore_pgs_subs: false
+  ignore_vobsub_subs: false
+  ignore_ass_subs: false
+  enabled_providers: []
+  single_language: false
+sonarr:
+  ip: 127.0.0.1
+  port: 8989
+  apikey: old-sonarr
+radarr:
+  ip: 127.0.0.1
+  port: 7878
+  apikey: old-radarr
+"""
+
+
+class BazarrCompatTests(unittest.TestCase):
+    def test_ignores_image_subs_and_wires_arr(self) -> None:
+        out = apply_direct_play_config(
+            BAZARR_SAMPLE, sonarr_apikey="sonarr-key", radarr_apikey="radarr-key"
+        )
+        self.assertRegex(out, r"ignore_pgs_subs:\s*true")
+        self.assertRegex(out, r"ignore_vobsub_subs:\s*true")
+        self.assertRegex(out, r"ignore_ass_subs:\s*true")
+        self.assertRegex(out, r"use_sonarr:\s*true")
+        self.assertRegex(out, r"use_radarr:\s*true")
+        self.assertIn("sonarr-key", out)
+        self.assertIn("radarr-key", out)
+        self.assertIn("gestdown", out)
+        self.assertRegex(out, r"ip:\s*sonarr")
+        self.assertRegex(out, r"ip:\s*radarr")
+
+    def test_rewrites_multiline_providers(self) -> None:
+        src = BAZARR_SAMPLE.replace(
+            "enabled_providers: []",
+            "enabled_providers:\n  - opensubtitlescom\n  - addic7ed",
+        )
+        out = apply_direct_play_config(
+            src, sonarr_apikey="s", radarr_apikey="r"
+        )
+        self.assertIn("- gestdown", out)
+        self.assertNotIn("opensubtitlescom", out)
+        self.assertNotIn("addic7ed", out)
+
+    def test_english_profile_is_en_only(self) -> None:
+        profile = english_language_profile()
+        self.assertEqual(profile["profileId"], 1)
+        self.assertEqual(profile["name"], "English")
+        self.assertEqual(profile["items"][0]["language"], "en")
+
+
+class TautulliSimklTests(unittest.TestCase):
+    def test_prefs_extract_token_and_machine(self) -> None:
+        xml = (
+            '<Preferences PlexOnlineToken="tok-1" MachineIdentifier="abc-uuid" '
+            'FriendlyName="Isyrr"/>'
+        )
+        conn = plex_connection_from_prefs(xml)
+        self.assertEqual(conn["token"], "tok-1")
+        self.assertEqual(conn["identifier"], "abc-uuid")
+        self.assertEqual(conn["name"], "Isyrr")
+
+    def test_pms_ini_points_at_compose_plex(self) -> None:
+        ini = "[General]\napi_key = secret-key\n\n[PMS]\npms_ip = 127.0.0.1\n"
+        out = apply_pms_ini(
+            ini, token="tok-1", identifier="abc-uuid", name="Isyrr", host="plex"
+        )
+        self.assertIn("plex", out)
+        self.assertIn("tok-1", out)
+        self.assertIn("abc-uuid", out)
+        self.assertRegex(out, r"first_run_complete\s*=\s*1")
+        self.assertEqual(tautulli_api_key(out), "secret-key")
+
+    def test_webhook_fields_only_watched(self) -> None:
+        fields = webhook_notifier_fields("https://api.simkl.com/plex?user_token=x")
+        self.assertEqual(fields["agent_id"], str(WEBHOOK_AGENT_ID))
+        self.assertEqual(fields["webhook_method"], "POST")
+        self.assertEqual(fields["on_watched"], "1")
+        self.assertEqual(fields["on_play"], "0")
+        self.assertEqual(fields["on_watched_body"], SIMKL_WATCHED_JSON)
+        self.assertIn("{themoviedb_id}", fields["on_watched_body"])
+        self.assertIn("media.scrobble", fields["on_watched_body"])
+
+    def test_find_simkl_notifier(self) -> None:
+        rows = [
+            {"id": 1, "agent_id": 13, "friendly_name": "Telegram"},
+            {"id": 4, "agent_id": 25, "agent_name": "webhook", "friendly_name": "SIMKL"},
+        ]
+        self.assertEqual(find_simkl_notifier_id(rows), 4)
+        self.assertIsNone(find_simkl_notifier_id([]))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Host-side stack policy: hardlink layout, *arr payloads, Plex prefs.
+"""Host-side stack policy: hardlink layout, *arr payloads, Plex prefs, Direct Play scores.
 
 Stdlib only — systemd ExecStartPost and CI call this with system python3.
 """

@@ -269,6 +269,18 @@ services:
       - ${COMMON_PATH}/radarr/movies:/data/movies
     devices:
       - /dev/dri:/dev/dri
+  tautulli:
+    <<: [*service-defaults, *mem-512m]
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
+    depends_on:
+      - plex
+    environment:
+      <<: *linuxserver-env
+    volumes:
+      - ${COMMON_PATH}/configs/tautulli:/config
+    ports:
+      - 8181:8181
   unpackerr:
     <<: [*service-defaults, *mem-256m]
     image: ghcr.io/unpackerr/unpackerr:latest
@@ -294,6 +306,21 @@ services:
       - ${COMMON_PATH}/configs/unpackerr:/config
       - ${COMMON_PATH}/configs/unpackerr/radarr_api_key:/run/secrets/radarr_api_key:ro
       - ${COMMON_PATH}/configs/unpackerr/sonarr_api_key:/run/secrets/sonarr_api_key:ro
+  bazarr:
+    <<: [*service-defaults, *mem-256m]
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    depends_on:
+      - radarr
+      - sonarr
+    environment:
+      <<: *linuxserver-env
+    ports:
+      - 6767:6767
+    volumes:
+      # Same COMMON_PATH as *arr so sidecar SRT lands next to the video (no path maps).
+      - ${COMMON_PATH}:${COMMON_PATH}
+      - ${COMMON_PATH}/configs/bazarr:/config
   recyclarr:
     <<: [*service-defaults, *mem-256m]
     # Recyclarr no longer publishes :latest. Major tag :8 receives 8.x updates.

@@ -17,9 +17,12 @@ Compose file: [`compose_files/docker-compose.yaml`](compose_files/docker-compose
 | TV / movies | [Sonarr](https://sonarr.tv/), [Radarr](https://radarr.video/) | — |
 | Indexers | [Jackett](https://github.com/Jackett/Jackett) | [Prowlarr](https://prowlarr.com/) (`prowlarr`) |
 | Downloads | [qBittorrent](https://www.qbittorrent.org/), [Unpackerr](https://unpackerr.zip/) | — |
+| Subtitles | [Bazarr](https://www.bazarr.media/) (English SRT sidecars; PGS ignored) | — |
+| Watch stats / SIMKL | [Tautulli](https://tautulli.com/) (Plex watched → SIMKL webhook) | — |
 | Cloudflare helper | [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) (localhost only) | — |
 | Quality profiles | [Recyclarr](https://recyclarr.dev/) (TRaSH Guides, cron) | — |
 | Image updates | [Watchtower](https://watchtower.nickfedor.com/) (`nickfedor/watchtower`) | — |
+| Watch history | [Tautulli](https://tautulli.com/) → [SIMKL](https://simkl.com/apps/plex) | — |
 
 Bring parked services back:
 
@@ -82,6 +85,7 @@ Replace the host with your LAN IP if you are not on the server.
 | Radarr | http://localhost:7878 |
 | Jackett | http://localhost:9117 |
 | qBittorrent | http://localhost:8080 |
+| Tautulli | http://localhost:8181 |
 | Jellyfin (profile) | http://localhost:8096 |
 | Prowlarr (profile) | http://localhost:9696 |
 
@@ -129,6 +133,14 @@ docker compose up -d
 ```
 
 Do not run `docker compose down` as a routine update: that tears down the stack. Prefer `pull` + `up -d`, or Watchtower.
+
+## SIMKL (Plex watch history)
+
+This stack has no Plex Pass, so Plex cannot call SIMKL’s official webhook itself. [Tautulli](https://tautulli.com/) (`lscr.io/linuxserver/tautulli`) watches Plex sessions and, on **Watched**, POSTs SIMKL’s documented Plex-shaped payload.
+
+One browser step: sign in at [simkl.com/apps/plex](https://simkl.com/apps/plex), copy the unique webhook URL into `compose_files/.env` as `SIMKL_PLEX_WEBHOOK_URL`, then run [`compose_files/scripts/homelab-setup.sh`](compose_files/scripts/homelab-setup.sh). Tautulli is http://localhost:8181.
+
+`SIMKL_CLIENT_ID` / `SIMKL_CLIENT_SECRET` stay in `.env` for the SIMKL app registration. The Tautulli path uses the webhook URL, not those OAuth tokens.
 
 ## Layout notes
 

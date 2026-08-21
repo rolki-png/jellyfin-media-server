@@ -1,7 +1,11 @@
 # Recyclarr v8 — TRaSH Guides sync
 # Profile titles must match compose_files/scripts/stack_policy/profiles.py
 # (UHD Bluray + WEB / WEB-2160p) — homelab-setup bulk-assign reads those names.
-# Prefer 4K, fall back to 1080p then 720p.
+# Playback target: Plex on Xbox Series X → Samsung UE65U8092 (display only, LAN).
+# Prefer 4K HDR10/HDR10+ WEB that Xbox can Direct Play (HEVC + AAC/DD/DD+).
+# Hard-reject TrueHD / DTS-HD: not in Plex Xbox MKV Direct Play, and this TV
+# does not decode TrueHD or DTS-HD on HDMI (DD+ / DD+ Atmos only).
+# min_format_score -9999: untagged WEB still grabs; -10000 rejects do not.
 # TV cannot play Dolby Vision → reject ALL DoVi (not only DV without HDR fallback).
 # SDR hard-reject disabled for WEB: many 4K WEB releases omit "HDR" in the title
 # and were incorrectly scored -10000, so Sonarr fell back to 1080p.
@@ -20,9 +24,16 @@ radarr:
           enabled: true
           except:
             - Reject Dolby Vision
+            - TrueHD ATMOS
+            - TrueHD
+            - DTS X
+            - DTS-HD MA
+            - DTS-HD HRA
+            - DTS
         upgrade:
           allowed: true
           until_quality: Bluray-2160p
+        min_format_score: -9999
         qualities:
           - name: WEB 2160p
             qualities:
@@ -54,6 +65,23 @@ radarr:
         assign_scores_to:
           - name: UHD Bluray + WEB
             score: 0
+      - trash_ids:
+          - 496f355514737f7d83bf7aa4d24f8169 # TrueHD ATMOS
+          - 3cafb66171b47f226146a0770576870f # TrueHD
+          - 2f22d89048b01681dde8afe203bf2e95 # DTS X
+          - dcf3ec6938fa32445f590a4da84256cd # DTS-HD MA
+          - 8e109e50e0a0b83a5098b056e13bf6db # DTS-HD HRA
+          - 1c1a4c5e823891c75bc50380a6866f73 # DTS
+        assign_scores_to:
+          - name: UHD Bluray + WEB
+            score: -10000
+      - trash_ids:
+          - 1af239278386be2919e1bcee0bde047e # DD+ ATMOS
+          - 185f1dd7264c4562b9022d963ac37424 # DD+
+          - 240770601cc226190c367ef59aba7463 # AAC
+        assign_scores_to:
+          - name: UHD Bluray + WEB
+            score: 100
 
 sonarr:
   web-2160p:
@@ -69,9 +97,16 @@ sonarr:
           enabled: true
           except:
             - Reject Dolby Vision
+            - TrueHD ATMOS
+            - TrueHD
+            - DTS X
+            - DTS-HD MA
+            - DTS-HD HRA
+            - DTS
         upgrade:
           allowed: true
           until_quality: Bluray-2160p
+        min_format_score: -9999
         qualities:
           - name: WEB 2160p
             qualities:
@@ -101,3 +136,20 @@ sonarr:
         assign_scores_to:
           - name: WEB-2160p
             score: 0
+      - trash_ids:
+          - 0d7824bb924701997f874e7ff7d4844a # TrueHD ATMOS
+          - 1808e4b9cee74e064dfae3f1db99dbfe # TrueHD
+          - 9d00418ba386a083fbf4d58235fc37ef # DTS X
+          - c429417a57ea8c41d57e6990a8b0033f # DTS-HD MA
+          - cfa5fbd8f02a86fc55d8d223d06a5e1f # DTS-HD HRA
+          - 5964f2a8b3be407d083498e4459d05d0 # DTS
+        assign_scores_to:
+          - name: WEB-2160p
+            score: -10000
+      - trash_ids:
+          - 4232a509ce60c4e208d13825b7c06264 # DD+ ATMOS
+          - 63487786a8b01b7f20dd2bc90dd4a477 # DD+
+          - a50b8a0c62274a7c38b09a9619ba9d86 # AAC
+        assign_scores_to:
+          - name: WEB-2160p
+            score: 100

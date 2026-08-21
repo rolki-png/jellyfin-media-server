@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply stack policy to Radarr, Sonarr, qBittorrent, Recyclarr, Unpackerr, and Plex.
+# Apply stack policy to Radarr, Sonarr, qBittorrent, Recyclarr, Unpackerr, Bazarr, Plex, and Tautulli (SIMKL).
 # --mode=boot  hardlink + Plex host prefs only (systemd ExecStartPost; no queue wipes / qBit restart)
 # --mode=all   full first-run / manual (default)
 set -euo pipefail
@@ -261,6 +261,92 @@ write_unpackerr_secrets() {
   chmod 600 "${unpackerr_dir}/radarr_api_key" "${unpackerr_dir}/sonarr_api_key"
 }
 
+bazarr_config_path() {
+  local cfg="${COMMON_PATH}/configs/bazarr/config/config.yaml"
+  if [[ -f "${cfg}" ]]; then
+    echo "${cfg}"
+    return 0
+  fi
+  cfg="${COMMON_PATH}/configs/bazarr/config.yaml"
+  if [[ -f "${cfg}" ]]; then
+    echo "${cfg}"
+    return 0
+  fi
+  return 1
+}
+
+fix_bazarr() {
+  local cfg
+  if ! cfg="$(bazarr_config_path)"; then
+    log "Bazarr config not found yet — start bazarr, then re-run homelab-setup"
+    return 0
+  fi
+  log "Applying Direct Play subtitle policy to Bazarr (${cfg})"
+  policy apply-bazarr-config "${cfg}" --sonarr-key "${SONARR_KEY}" --radarr-key "${RADARR_KEY}"
+  if docker ps --format '{{.Names}}' | grep -qx bazarr; then
+    docker restart bazarr >/dev/null
+  fi
+  ensure_bazarr_english_profile "${cfg}"
+}
+
+ensure_bazarr_english_profile() {
+  local cfg=$1
+  if ! docker ps --format '{{.Names}}' | grep -qx bazarr; then
+    return 0
+  fi
+  local _wait
+  for _wait in $(seq 1 30); do
+    if curl -sf -o /dev/null "http://127.0.0.1:6767/"; then
+      break
+    fi
+    sleep 1
+  done
+  log "Ensuring Bazarr English languages profile"
+  CFG="${cfg}" python3 - <<'PY' || log "Bazarr English profile setup failed — open http://localhost:6767 Settings → Languages"
+import json, os, pathlib, re, sys, urllib.request
+
+from stack_policy.bazarr import english_settings_form
+
+cfg = pathlib.Path(os.environ["CFG"])
+text = cfg.read_text(encoding="utf-8")
+match = re.search(r"^auth:\n  apikey:\s*(\S+)", text, re.M)
+if not match:
+    sys.exit(1)
+apikey = match.group(1)
+headers = {"X-API-KEY": apikey, "Accept": "application/json"}
+
+req = urllib.request.Request(
+    "http://127.0.0.1:6767/api/system/settings",
+    data=english_settings_form(),
+    method="POST",
+    headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
+)
+with urllib.request.urlopen(req, timeout=60) as resp:
+    if resp.status not in (200, 204):
+        sys.exit(1)
+
+def get(path):
+    r = urllib.request.Request(f"http://127.0.0.1:6767/api{path}", headers=headers)
+    with urllib.request.urlopen(r, timeout=30) as resp:
+        return json.load(resp)
+
+def post(path):
+    r = urllib.request.Request(
+        f"http://127.0.0.1:6767/api{path}", data=b"", method="POST", headers=headers
+    )
+    with urllib.request.urlopen(r, timeout=30) as resp:
+        if resp.status not in (200, 204):
+            raise RuntimeError(path)
+
+for row in get("/series").get("data") or []:
+    if row.get("profileId") != 1:
+        post(f"/series?seriesid={row['sonarrSeriesId']}&profileid=1")
+for row in get("/movies").get("data") or []:
+    if row.get("profileId") != 1:
+        post(f"/movies?radarrid={row['radarrId']}&profileid=1")
+PY
+}
+
 run_recyclarr_sync() {
   if ! docker ps --format '{{.Names}}' | grep -qx recyclarr; then
     log "Recyclarr not running yet (will sync after compose up)"
@@ -363,6 +449,138 @@ PY
   fi
 }
 
+tautulli_config_path() {
+  echo "${COMMON_PATH}/configs/tautulli/config.ini"
+}
+
+wait_for_tautulli() {
+  local _wait
+  for _wait in $(seq 1 40); do
+    if curl -sf -o /dev/null "http://127.0.0.1:8181/"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+ensure_tautulli_simkl() {
+  local cfg prefs
+  cfg="$(tautulli_config_path)"
+  mkdir -p "${COMMON_PATH}/configs/tautulli"
+  chown "${PUID:-1000}:${PGID:-1000}" "${COMMON_PATH}/configs/tautulli"
+
+  if ! docker ps --format '{{.Names}}' | grep -qx tautulli; then
+    log "Tautulli not running — start it, then re-run homelab-setup for SIMKL"
+    return 0
+  fi
+
+  if ! wait_for_tautulli; then
+    log "Tautulli UI not ready — skip SIMKL webhook setup"
+    return 0
+  fi
+
+  prefs="$(plex_preferences_path)"
+  if [[ ! -f "${prefs}" || ! -f "${cfg}" ]]; then
+    log "Tautulli or Plex config missing — complete first start, then re-run homelab-setup"
+    return 0
+  fi
+
+  local changed
+  changed="$(PREFS="${prefs}" INI="${cfg}" HOST="${PLEX_INTERNAL_HOST:-plex}" python3 - <<'PY'
+import os
+from pathlib import Path
+from stack_policy.tautulli import apply_pms_ini, plex_connection_from_prefs
+
+prefs = Path(os.environ["PREFS"]).read_text(encoding="utf-8")
+ini_path = Path(os.environ["INI"])
+ini = ini_path.read_text(encoding="utf-8")
+conn = plex_connection_from_prefs(prefs)
+updated = apply_pms_ini(
+    ini,
+    token=conn["token"],
+    identifier=conn["identifier"],
+    name=conn["name"],
+    host=os.environ["HOST"],
+)
+if updated != ini:
+    ini_path.write_text(updated, encoding="utf-8")
+    print("changed")
+else:
+    print("ok")
+PY
+)"
+  if [[ "${changed}" == "changed" ]]; then
+    log "Pointed Tautulli at Plex (${PLEX_INTERNAL_HOST:-plex}:32400) — restarting Tautulli (not Plex)"
+    docker restart tautulli >/dev/null
+    if ! wait_for_tautulli; then
+      log "Tautulli did not come back after restart"
+      return 0
+    fi
+  fi
+
+  local webhook="${SIMKL_PLEX_WEBHOOK_URL:-}"
+  if [[ -z "${webhook}" ]]; then
+    log "SIMKL: copy your webhook URL from https://simkl.com/apps/plex into compose_files/.env as SIMKL_PLEX_WEBHOOK_URL, then re-run homelab-setup"
+    return 0
+  fi
+
+  log "Ensuring Tautulli SIMKL webhook notifier"
+  INI="${cfg}" WEBHOOK="${webhook}" python3 - <<'PY' || log "Tautulli SIMKL webhook setup failed — add a Webhook agent in Tautulli (Watched trigger)"
+import json, os, pathlib, sys, urllib.error, urllib.parse, urllib.request
+
+from stack_policy.tautulli import (
+    WEBHOOK_AGENT_ID,
+    find_simkl_notifier_id,
+    tautulli_api_key,
+    webhook_notifier_fields,
+    webhook_url_from_config,
+)
+
+api_key = tautulli_api_key(pathlib.Path(os.environ["INI"]).read_text(encoding="utf-8"))
+if not api_key:
+    sys.exit(1)
+webhook = os.environ["WEBHOOK"].strip()
+base = "http://127.0.0.1:8181/api/v2"
+
+def tautulli(cmd, extra=None):
+    params = {"apikey": api_key, "cmd": cmd}
+    if extra:
+        params.update(extra)
+    url = base + "?" + urllib.parse.urlencode(params)
+    with urllib.request.urlopen(url, timeout=20) as resp:
+        payload = json.load(resp)
+    if payload.get("response", {}).get("result") != "success":
+        raise RuntimeError(payload)
+    return payload["response"].get("data")
+
+notifiers = tautulli("get_notifiers") or []
+notifier_id = find_simkl_notifier_id(notifiers)
+if notifier_id is None:
+    tautulli("add_notifier_config", {"agent_id": str(WEBHOOK_AGENT_ID)})
+    notifiers = tautulli("get_notifiers") or []
+    notifier_id = find_simkl_notifier_id(notifiers)
+    if notifier_id is None:
+        # Newly added webhook has an empty friendly_name until set_notifier_config.
+        webhooks = [n for n in notifiers if n.get("agent_id") == WEBHOOK_AGENT_ID or n.get("agent_name") == "webhook"]
+        if len(webhooks) == 1:
+            notifier_id = int(webhooks[0]["id"])
+        else:
+            unnamed = [n for n in webhooks if not n.get("friendly_name")]
+            if len(unnamed) != 1:
+                raise RuntimeError("could not identify new webhook notifier")
+            notifier_id = int(unnamed[0]["id"])
+
+config = tautulli("get_notifier_config", {"notifier_id": str(notifier_id)}) or {}
+if webhook_url_from_config(config) == webhook:
+    sys.exit(0)
+
+fields = webhook_notifier_fields(webhook)
+fields["notifier_id"] = str(notifier_id)
+tautulli("set_notifier_config", fields)
+PY
+}
+
 trigger_plex_library_scan() {
   if ! docker ps --format '{{.Names}}' | grep -qx plex; then
     return 0
@@ -395,6 +613,8 @@ apply_hardlink_policy() {
   fix_plex_host
   ensure_plex_notification 7878 "${RADARR_KEY}" Radarr
   ensure_plex_notification 8989 "${SONARR_KEY}" Sonarr
+  fix_bazarr
+  ensure_tautulli_simkl
 }
 
 main() {
