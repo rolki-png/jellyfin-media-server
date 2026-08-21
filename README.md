@@ -50,6 +50,8 @@ Log out and back in after adding the user to the `docker` group.
 
 ## Install
 
+Agents: follow [`AGENTS.md`](AGENTS.md) (this section is the same sequence in short form).
+
 ```bash
 git clone https://github.com/roland-kiraly/All-jellyfin-media-server.git
 cd All-jellyfin-media-server
@@ -58,19 +60,27 @@ cp compose_files/.env.example compose_files/.env
 
 Edit `compose_files/.env`:
 
-- `COMMON_PATH` — absolute path for configs and media
+- `COMMON_PATH` — absolute path for configs and media (mergerfs pool recommended)
 - `TZ` — IANA timezone
 - `PUID` / `PGID` — `id -u` / `id -g` of the host user
+- `SAME_DISK_SSD_ROOT` / `SAME_DISK_HDD_ROOT` — mergerfs branch roots
 - `PLEX_ADVERTISE_IP` — LAN URL clients should use, e.g. `http://192.168.0.236:32400`
 - `PLEX_CLAIM` — one-time token from [plex.tv/claim](https://plex.tv/claim) (expires in a few minutes)
+- `SIMKL_PLEX_WEBHOOK_URL` — quoted unique URL from [simkl.com/apps/plex](https://simkl.com/apps/plex) (optional until SIMKL is needed)
 
 ```bash
+set -a && source compose_files/.env && set +a
+mkdir -p "${COMMON_PATH}" "${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}"
 bash compose_files/validate.sh
 cd compose_files
-docker compose up -d
+docker compose --env-file .env up -d
+cd ..
+bash compose_files/scripts/homelab-setup.sh --mode=all
+sudo bash compose_files/systemd/install-media-server-unit.sh
+sudo systemctl enable --now media-server.service
 ```
 
-First-run wiring (hardlinks, qBittorrent categories, Recyclarr secrets, Plex notifications) is [`compose_files/scripts/homelab-setup.sh`](compose_files/scripts/homelab-setup.sh) (`--mode=all`, default). Boot only reapplies hardlink + Plex host policy: `--mode=boot` (no qBittorrent restart). See [`compose_files/systemd/README.md`](compose_files/systemd/README.md).
+`homelab-setup.sh --mode=all` is first-run (hardlinks, qBittorrent categories, Recyclarr, Bazarr, Tautulli/SIMKL). `--mode=boot` reapplies policy without a qBittorrent restart. See [`compose_files/systemd/README.md`](compose_files/systemd/README.md).
 
 ## URLs
 
@@ -85,6 +95,7 @@ Replace the host with your LAN IP if you are not on the server.
 | Jackett | http://localhost:9117 |
 | qBittorrent | http://localhost:8080 |
 | Tautulli | http://localhost:8181 |
+| Bazarr | http://localhost:6767 |
 | Jellyfin (profile) | http://localhost:8096 |
 | Prowlarr (profile) | http://localhost:9696 |
 

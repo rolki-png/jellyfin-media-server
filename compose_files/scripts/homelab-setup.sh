@@ -28,6 +28,22 @@ SONARR_CONFIG="${COMMON_PATH}/configs/sonarr/config.xml"
 QBIT_CATEGORIES="${COMMON_PATH}/configs/qbittorrent/qBittorrent/categories.json"
 RECYCLARR_SECRETS="${COMPOSE_DIR}/recyclarr/secrets.yml"
 
+wait_for_path() {
+  local path=$1
+  local _i
+  for _i in $(seq 1 90); do
+    if [[ -f "${path}" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "ERROR: timed out waiting for ${path} (is docker compose up?)" >&2
+  return 1
+}
+
+wait_for_path "${RADARR_CONFIG}"
+wait_for_path "${SONARR_CONFIG}"
+
 RADARR_KEY="$(grep -oP '(?<=<ApiKey>)[^<]+' "${RADARR_CONFIG}")"
 SONARR_KEY="$(grep -oP '(?<=<ApiKey>)[^<]+' "${SONARR_CONFIG}")"
 
