@@ -10,31 +10,45 @@ from pathlib import Path
 
 from stack_policy.arr import (
     custom_script_payload,
+    first_download_client_id,
+    has_plex_server_notification,
+    has_remote_path_mapping,
+    has_root_folder,
     ids_needing_profile,
     patch_download_client,
     patch_media_management,
+    plex_server_payload,
     quality_profile_id,
+    stuck_queue_ids,
 )
-from stack_policy.layout import check_arr_volumes, check_compose_doc
-from stack_policy.plex_prefs import apply_host_prefs, ensure_transcoder_temp
-from stack_policy.bazarr import apply_direct_play_config, english_language_profile
+from stack_policy.bazarr import (
+    apikey_from_config,
+    apply_direct_play_config,
+    apply_english_library,
+    english_language_profile,
+    titles_needing_english,
+)
 from stack_policy.playback_compat import (
     HARD_REJECT,
     MIN_FORMAT_SCORE,
     PREFERRED,
     assigned_score,
     score_for,
+    score_map,
 )
-from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
 from stack_policy.tautulli import (
     SIMKL_WATCHED_JSON,
     WEBHOOK_AGENT_ID,
     apply_pms_ini,
+    ensure_simkl_webhook,
     find_simkl_notifier_id,
     plex_connection_from_prefs,
     tautulli_api_key,
     webhook_notifier_fields,
 )
+from stack_policy.layout import check_arr_volumes, check_compose_doc
+from stack_policy.plex_prefs import apply_host_prefs, ensure_transcoder_temp
+from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
 
 
 class LayoutTests(unittest.TestCase):
@@ -145,13 +159,13 @@ class PlaybackCompatTests(unittest.TestCase):
         self.assertEqual(MIN_FORMAT_SCORE, -9999)
         self.assertGreater(MIN_FORMAT_SCORE, HARD_REJECT)
 
-    def test_recyclarr_yaml_applies_scores(self) -> None:
+    def test_recyclarr_yaml_applies_every_scored_id(self) -> None:
         yml = (Path(__file__).resolve().parents[1] / "recyclarr" / "recyclarr.yml").read_text(
             encoding="utf-8"
         )
-        self.assertEqual(assigned_score(yml, "496f355514737f7d83bf7aa4d24f8169"), HARD_REJECT)
-        self.assertEqual(assigned_score(yml, "185f1dd7264c4562b9022d963ac37424"), PREFERRED)
-        self.assertEqual(assigned_score(yml, "0d7824bb924701997f874e7ff7d4844a"), HARD_REJECT)
+        for app in ("radarr", "sonarr"):
+            for tid, score in score_map(app).items():
+                self.assertEqual(assigned_score(yml, tid), score, msg=tid)
         self.assertIn(f"min_format_score: {MIN_FORMAT_SCORE}", yml)
 
 
@@ -236,6 +250,22 @@ class BazarrCompatTests(unittest.TestCase):
         self.assertEqual(profile["name"], "English")
         self.assertEqual(profile["items"][0]["language"], "en")
 
+    def test_apikey_and_titles_needing_english(self) -> None:
+        self.assertEqual(apikey_from_config("auth:\n  apikey: abc\n"), "abc")
+        rows = {"data": [{"profileId": 1, "sonarrSeriesId": 9}, {"profileId": 2, "sonarrSeriesId": 8}]}
+        self.assertEqual(titles_needing_english(rows, "sonarrSeriesId"), [8])
+
+    def test_apply_english_library_posts_missing_only(self) -> None:
+        posted: list[str] = []
+
+        def get(path: str) -> dict:
+            if path == "/series":
+                return {"data": [{"profileId": 2, "sonarrSeriesId": 11}]}
+            return {"data": [{"profileId": 1, "radarrId": 3}]}
+
+        apply_english_library(get, posted.append)
+        self.assertEqual(posted, ["/series?seriesid=11&profileid=1"])
+
 
 class TautulliSimklTests(unittest.TestCase):
     def test_prefs_extract_token_and_machine(self) -> None:
@@ -276,6 +306,51 @@ class TautulliSimklTests(unittest.TestCase):
         ]
         self.assertEqual(find_simkl_notifier_id(rows), 4)
         self.assertIsNone(find_simkl_notifier_id([]))
+
+    def test_ensure_simkl_webhook_creates_then_skips(self) -> None:
+        store: dict = {"notifiers": [], "hook": ""}
+
+        def call(cmd: str, extra=None):
+            extra = extra or {}
+            if cmd == "get_notifiers":
+                return store["notifiers"]
+            if cmd == "add_notifier_config":
+                store["notifiers"] = [
+                    {"id": 7, "agent_id": WEBHOOK_AGENT_ID, "agent_name": "webhook", "friendly_name": ""}
+                ]
+                return {}
+            if cmd == "get_notifier_config":
+                return {"config": {"hook": store["hook"]}}
+            if cmd == "set_notifier_config":
+                store["hook"] = extra.get("webhook_hook", "")
+                store["notifiers"][0]["friendly_name"] = "SIMKL"
+                return {}
+            raise AssertionError(cmd)
+
+        self.assertEqual(ensure_simkl_webhook(call, "https://api.simkl.com/x?t=1"), "updated")
+        self.assertEqual(ensure_simkl_webhook(call, "https://api.simkl.com/x?t=1"), "ok")
+
+
+class ArrPolicyTests(unittest.TestCase):
+    def test_root_remote_queue_plex(self) -> None:
+        self.assertTrue(has_root_folder([{"path": "/data/movies/"}], "/data/movies"))
+        self.assertTrue(
+            has_remote_path_mapping(
+                [{"host": "qbittorrent", "remotePath": "/downloads/", "localPath": "/pool/dl/"}],
+                host="qbittorrent",
+                remote="/downloads",
+                local="/pool/dl",
+            )
+        )
+        self.assertEqual(
+            stuck_queue_ids({"records": [{"id": 1, "status": "completed"}, {"id": 2, "status": "downloading"}]}),
+            [1],
+        )
+        self.assertTrue(has_plex_server_notification([{"implementation": "PlexServer"}]))
+        self.assertFalse(has_plex_server_notification([]))
+        self.assertEqual(first_download_client_id([{"id": 4}]), 4)
+        body = plex_server_payload(host="plex", token="tok")
+        self.assertEqual(body["implementation"], "PlexServer")
 
 
 if __name__ == "__main__":

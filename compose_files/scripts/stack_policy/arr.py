@@ -73,3 +73,60 @@ def custom_script_payload(app_name: str, path: str) -> dict[str, Any]:
     if app_name == "Sonarr":
         body["onImportComplete"] = True
     return body
+
+
+def first_download_client_id(clients: list[dict[str, Any]]) -> int:
+    return int(clients[0]["id"])
+
+
+def has_root_folder(roots: list[dict[str, Any]], path: str) -> bool:
+    want = path.rstrip("/")
+    return any(r.get("path", "").rstrip("/") == want for r in roots)
+
+
+def has_remote_path_mapping(
+    rows: list[dict[str, Any]], *, host: str, remote: str, local: str
+) -> bool:
+    remote_n = remote.rstrip("/") + "/"
+    local_n = local.rstrip("/") + "/"
+    return any(
+        r.get("host") == host
+        and r.get("remotePath", "").rstrip("/") + "/" == remote_n
+        and r.get("localPath", "").rstrip("/") + "/" == local_n
+        for r in rows
+    )
+
+
+def remote_path_payload(*, host: str, remote: str, local: str) -> dict[str, str]:
+    return {"host": host, "remotePath": remote, "localPath": local}
+
+
+def stuck_queue_ids(queue: dict[str, Any]) -> list[int]:
+    return [
+        int(r["id"])
+        for r in queue.get("records", [])
+        if r.get("status") == "completed" or r.get("trackedDownloadStatus") == "warning"
+    ]
+
+
+def has_plex_server_notification(notifications: list[dict[str, Any]]) -> bool:
+    return any(n.get("implementation") == "PlexServer" for n in notifications)
+
+
+def plex_server_payload(*, host: str, token: str) -> dict[str, Any]:
+    return {
+        "name": "Plex",
+        "implementation": "PlexServer",
+        "configContract": "PlexServerSettings",
+        "onDownload": True,
+        "onUpgrade": True,
+        "onRename": True,
+        "fields": [
+            {"name": "host", "value": host},
+            {"name": "port", "value": 32400},
+            {"name": "useSsl", "value": False},
+            {"name": "authToken", "value": token},
+            {"name": "updateLibrary", "value": True},
+        ],
+        "tags": [],
+    }

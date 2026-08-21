@@ -11,15 +11,31 @@ from stack_policy.arr import (
     custom_script_id,
     custom_script_payload,
     editor_payload,
+    first_download_client_id,
+    has_plex_server_notification,
+    has_remote_path_mapping,
+    has_root_folder,
     ids_needing_profile,
     patch_download_client,
     patch_media_management,
+    plex_server_payload,
     quality_profile_id,
+    remote_path_payload,
+    stuck_queue_ids,
 )
-from stack_policy.bazarr import apply_direct_play_config
+from stack_policy.bazarr import (
+    apikey_from_config,
+    apply_direct_play_config,
+    apply_english_over_http,
+)
 from stack_policy.layout import check_compose_doc
 from stack_policy.plex_prefs import apply_host_prefs
 from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
+from stack_policy.tautulli import (
+    ensure_simkl_webhook,
+    tautulli_api_key,
+    tautulli_http_call,
+)
 
 
 def _load_json() -> object:
@@ -65,6 +81,33 @@ def main(argv: list[str] | None = None) -> int:
     p_bazarr.add_argument("config_path")
     p_bazarr.add_argument("--sonarr-key", required=True)
     p_bazarr.add_argument("--radarr-key", required=True)
+
+    p_bazarr_en = sub.add_parser("apply-bazarr-english")
+    p_bazarr_en.add_argument("config_path")
+    p_bazarr_en.add_argument("--base-url", default="http://127.0.0.1:6767")
+
+    p_simkl = sub.add_parser("apply-tautulli-simkl")
+    p_simkl.add_argument("ini_path")
+    p_simkl.add_argument("--webhook", required=True)
+    p_simkl.add_argument("--base-url", default="http://127.0.0.1:8181")
+
+    p_plex_n = sub.add_parser("plex-notify-payload")
+    p_plex_n.add_argument("--host", required=True)
+    p_plex_n.add_argument("--token", required=True)
+
+    sub.add_parser("has-plex-notify")
+    sub.add_parser("stuck-queue-ids")
+    p_root = sub.add_parser("has-root-folder")
+    p_root.add_argument("path")
+    p_map = sub.add_parser("has-remote-path")
+    p_map.add_argument("--host", required=True)
+    p_map.add_argument("--remote", required=True)
+    p_map.add_argument("--local", required=True)
+    sub.add_parser("first-download-client-id")
+    p_rpp = sub.add_parser("remote-path-payload")
+    p_rpp.add_argument("--host", required=True)
+    p_rpp.add_argument("--remote", required=True)
+    p_rpp.add_argument("--local", required=True)
 
     args = parser.parse_args(argv)
 
@@ -145,6 +188,59 @@ def main(argv: list[str] | None = None) -> int:
         )
         if updated != original:
             path.write_text(updated, encoding="utf-8")
+        return 0
+
+    if args.cmd == "apply-bazarr-english":
+        path = Path(args.config_path)
+        key = apikey_from_config(path.read_text(encoding="utf-8"))
+        if not key:
+            print("ERROR: Bazarr apikey missing", file=sys.stderr)
+            return 1
+        apply_english_over_http(args.base_url, key)
+        return 0
+
+    if args.cmd == "apply-tautulli-simkl":
+        ini = Path(args.ini_path).read_text(encoding="utf-8")
+        key = tautulli_api_key(ini)
+        if not key:
+            print("ERROR: Tautulli api_key missing", file=sys.stderr)
+            return 1
+        ensure_simkl_webhook(tautulli_http_call(args.base_url, key), args.webhook)
+        return 0
+
+    if args.cmd == "plex-notify-payload":
+        print(json.dumps(plex_server_payload(host=args.host, token=args.token)))
+        return 0
+
+    if args.cmd == "has-plex-notify":
+        return 0 if has_plex_server_notification(_load_json()) else 1  # type: ignore[arg-type]
+
+    if args.cmd == "stuck-queue-ids":
+        print(json.dumps(stuck_queue_ids(_load_json())))  # type: ignore[arg-type]
+        return 0
+
+    if args.cmd == "has-root-folder":
+        return 0 if has_root_folder(_load_json(), args.path) else 1  # type: ignore[arg-type]
+
+    if args.cmd == "has-remote-path":
+        ok = has_remote_path_mapping(
+            _load_json(),  # type: ignore[arg-type]
+            host=args.host,
+            remote=args.remote,
+            local=args.local,
+        )
+        return 0 if ok else 1
+
+    if args.cmd == "first-download-client-id":
+        print(first_download_client_id(_load_json()))  # type: ignore[arg-type]
+        return 0
+
+    if args.cmd == "remote-path-payload":
+        print(
+            json.dumps(
+                remote_path_payload(host=args.host, remote=args.remote, local=args.local)
+            )
+        )
         return 0
 
     return 2

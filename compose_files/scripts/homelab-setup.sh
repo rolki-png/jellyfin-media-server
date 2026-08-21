@@ -87,7 +87,7 @@ fix_download_client() {
   log "Fixing ${name} qBittorrent download client"
   local current id
   current="$(arr_get "${port}" "${key}" "/api/v3/downloadclient")"
-  id="$(CURRENT="${current}" python3 -c 'import json,os; print(json.loads(os.environ["CURRENT"])[0]["id"])')"
+  id="$(printf '%s' "${current}" | policy first-download-client-id)"
   printf '%s' "${current}" | policy patch-download-client \
     | arr_put "${port}" "${key}" "/api/v3/downloadclient/${id}"
 }
@@ -97,13 +97,7 @@ ensure_root_folder() {
   log "Ensuring ${name} root folder ${path}"
   local existing
   existing="$(arr_get "${port}" "${key}" "/api/v3/rootfolder")"
-  if EXISTING="${existing}" WANT="${path}" python3 - <<'PY'
-import json, os, sys
-want = os.environ["WANT"].rstrip("/")
-roots = json.loads(os.environ["EXISTING"])
-sys.exit(0 if any(r.get("path", "").rstrip("/") == want for r in roots) else 1)
-PY
-  then
+  if printf '%s' "${existing}" | policy has-root-folder "${path}"; then
     log "${name} root folder already set"
     return 0
   fi
@@ -120,32 +114,12 @@ ensure_remote_path_mapping() {
   log "Ensuring ${name} remote path mapping ${remote} -> ${local_path}"
   local existing
   existing="$(arr_get "${port}" "${key}" "/api/v3/remotepathmapping")"
-  if EXISTING="${existing}" HOST="${host}" REMOTE="${remote}" LOCAL="${local_path}" python3 - <<'PY'
-import json, os, sys
-rows = json.loads(os.environ["EXISTING"])
-host = os.environ["HOST"]
-remote = os.environ["REMOTE"].rstrip("/") + "/"
-local = os.environ["LOCAL"].rstrip("/") + "/"
-sys.exit(0 if any(
-    r.get("host") == host
-    and r.get("remotePath", "").rstrip("/") + "/" == remote
-    and r.get("localPath", "").rstrip("/") + "/" == local
-    for r in rows
-) else 1)
-PY
-  then
+  if printf '%s' "${existing}" | policy has-remote-path --host "${host}" --remote "${remote}" --local "${local_path}"; then
     log "${name} remote path mapping already set"
     return 0
   fi
-  HOST="${host}" REMOTE="${remote}" LOCAL="${local_path}" python3 - <<'PY' \
+  policy remote-path-payload --host "${host}" --remote "${remote}" --local "${local_path}" \
     | arr_post "${port}" "${key}" "/api/v3/remotepathmapping"
-import json, os
-print(json.dumps({
-    "host": os.environ["HOST"],
-    "remotePath": os.environ["REMOTE"],
-    "localPath": os.environ["LOCAL"],
-}))
-PY
 }
 
 ensure_same_disk_script() {
@@ -178,17 +152,8 @@ clear_stuck_queue() {
   log "Clearing stuck ${name} queue items"
   local queue ids_json count
   queue="$(arr_get "${port}" "${key}" "/api/v3/queue?pageSize=200")"
-  ids_json="$(QUEUE="${queue}" python3 - <<'PY'
-import json, os
-q = json.loads(os.environ["QUEUE"])
-ids = [
-    r["id"] for r in q.get("records", [])
-    if r.get("status") == "completed" or r.get("trackedDownloadStatus") == "warning"
-]
-print(json.dumps(ids))
-PY
-)"
-  count="$(IDS="${ids_json}" python3 -c 'import json,os; print(len(json.loads(os.environ["IDS"])))')"
+  ids_json="$(printf '%s' "${queue}" | policy stuck-queue-ids)"
+  count="$(printf '%s' "${ids_json}" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
   if [[ "${count}" -eq 0 ]]; then
     log "No stuck ${name} queue items"
     return 0
@@ -318,49 +283,7 @@ ensure_bazarr_english_profile() {
     sleep 1
   done
   log "Ensuring Bazarr English languages profile"
-  CFG="${cfg}" python3 - <<'PY' || log "Bazarr English profile setup failed — open http://localhost:6767 Settings → Languages"
-import json, os, pathlib, re, sys, urllib.request
-
-from stack_policy.bazarr import english_settings_form
-
-cfg = pathlib.Path(os.environ["CFG"])
-text = cfg.read_text(encoding="utf-8")
-match = re.search(r"^auth:\n  apikey:\s*(\S+)", text, re.M)
-if not match:
-    sys.exit(1)
-apikey = match.group(1)
-headers = {"X-API-KEY": apikey, "Accept": "application/json"}
-
-req = urllib.request.Request(
-    "http://127.0.0.1:6767/api/system/settings",
-    data=english_settings_form(),
-    method="POST",
-    headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
-)
-with urllib.request.urlopen(req, timeout=60) as resp:
-    if resp.status not in (200, 204):
-        sys.exit(1)
-
-def get(path):
-    r = urllib.request.Request(f"http://127.0.0.1:6767/api{path}", headers=headers)
-    with urllib.request.urlopen(r, timeout=30) as resp:
-        return json.load(resp)
-
-def post(path):
-    r = urllib.request.Request(
-        f"http://127.0.0.1:6767/api{path}", data=b"", method="POST", headers=headers
-    )
-    with urllib.request.urlopen(r, timeout=30) as resp:
-        if resp.status not in (200, 204):
-            raise RuntimeError(path)
-
-for row in get("/series").get("data") or []:
-    if row.get("profileId") != 1:
-        post(f"/series?seriesid={row['sonarrSeriesId']}&profileid=1")
-for row in get("/movies").get("data") or []:
-    if row.get("profileId") != 1:
-        post(f"/movies?radarrid={row['radarrId']}&profileid=1")
-PY
+  policy apply-bazarr-english "${cfg}" || log "Bazarr English profile setup failed — open http://localhost:6767 Settings → Languages"
 }
 
 run_recyclarr_sync() {
@@ -430,35 +353,14 @@ ensure_plex_notification() {
   fi
 
   host="${PLEX_INTERNAL_HOST:-plex}"
-  if arr_get "${port}" "${key}" "/api/v3/notification" \
-    | python3 -c "import json,sys; sys.exit(0 if any(n.get('implementation')=='PlexServer' for n in json.load(sys.stdin)) else 1)"; then
+  if arr_get "${port}" "${key}" "/api/v3/notification" | policy has-plex-notify; then
     log "${name} Plex notification already configured"
     return 0
   fi
 
   log "Configuring ${name} Plex library refresh notification"
-  local body
-  body="$(TOKEN="${token}" HOST="${host}" python3 - <<'PY'
-import json, os
-print(json.dumps({
-    "name": "Plex",
-    "implementation": "PlexServer",
-    "configContract": "PlexServerSettings",
-    "onDownload": True,
-    "onUpgrade": True,
-    "onRename": True,
-    "fields": [
-        {"name": "host", "value": os.environ["HOST"]},
-        {"name": "port", "value": 32400},
-        {"name": "useSsl", "value": False},
-        {"name": "authToken", "value": os.environ["TOKEN"]},
-        {"name": "updateLibrary", "value": True},
-    ],
-    "tags": [],
-}))
-PY
-)"
-  if ! printf '%s' "${body}" | curl -sf --max-time 30 -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
+  if ! policy plex-notify-payload --host "${host}" --token "${token}" \
+      | curl -sf --max-time 30 -H "X-Api-Key: ${key}" -H "Content-Type: application/json" \
       -X POST "http://localhost:${port}/api/v3/notification" -d @- >/dev/null; then
     log "${name} Plex notification setup failed — configure Plex under Settings → Connect in ${name}"
     return 0
@@ -556,59 +458,8 @@ PY
   fi
 
   log "Ensuring Tautulli SIMKL webhook notifier"
-  INI="${cfg}" WEBHOOK="${webhook}" python3 - <<'PY' || log "Tautulli SIMKL webhook setup failed — add a Webhook agent in Tautulli (Watched trigger)"
-import json, os, pathlib, sys, urllib.error, urllib.parse, urllib.request
-
-from stack_policy.tautulli import (
-    WEBHOOK_AGENT_ID,
-    find_simkl_notifier_id,
-    tautulli_api_key,
-    webhook_notifier_fields,
-    webhook_url_from_config,
-)
-
-api_key = tautulli_api_key(pathlib.Path(os.environ["INI"]).read_text(encoding="utf-8"))
-if not api_key:
-    sys.exit(1)
-webhook = os.environ["WEBHOOK"].strip()
-base = "http://127.0.0.1:8181/api/v2"
-
-def tautulli(cmd, extra=None):
-    params = {"apikey": api_key, "cmd": cmd}
-    if extra:
-        params.update(extra)
-    url = base + "?" + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=20) as resp:
-        payload = json.load(resp)
-    if payload.get("response", {}).get("result") != "success":
-        raise RuntimeError(payload)
-    return payload["response"].get("data")
-
-notifiers = tautulli("get_notifiers") or []
-notifier_id = find_simkl_notifier_id(notifiers)
-if notifier_id is None:
-    tautulli("add_notifier_config", {"agent_id": str(WEBHOOK_AGENT_ID)})
-    notifiers = tautulli("get_notifiers") or []
-    notifier_id = find_simkl_notifier_id(notifiers)
-    if notifier_id is None:
-        # Newly added webhook has an empty friendly_name until set_notifier_config.
-        webhooks = [n for n in notifiers if n.get("agent_id") == WEBHOOK_AGENT_ID or n.get("agent_name") == "webhook"]
-        if len(webhooks) == 1:
-            notifier_id = int(webhooks[0]["id"])
-        else:
-            unnamed = [n for n in webhooks if not n.get("friendly_name")]
-            if len(unnamed) != 1:
-                raise RuntimeError("could not identify new webhook notifier")
-            notifier_id = int(unnamed[0]["id"])
-
-config = tautulli("get_notifier_config", {"notifier_id": str(notifier_id)}) or {}
-if webhook_url_from_config(config) == webhook:
-    sys.exit(0)
-
-fields = webhook_notifier_fields(webhook)
-fields["notifier_id"] = str(notifier_id)
-tautulli("set_notifier_config", fields)
-PY
+  policy apply-tautulli-simkl "${cfg}" --webhook "${webhook}" \
+    || log "Tautulli SIMKL webhook setup failed — add a Webhook agent in Tautulli (Watched trigger)"
 }
 
 trigger_plex_library_scan() {

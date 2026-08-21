@@ -60,6 +60,67 @@ def english_settings_form() -> bytes:
     ).encode()
 
 
+def apikey_from_config(text: str) -> str:
+    match = re.search(r"^auth:\n  apikey:\s*(\S+)", text, re.M)
+    return match.group(1) if match else ""
+
+
+def titles_needing_english(rows: object, id_key: str) -> list[int]:
+    out: list[int] = []
+    data = rows.get("data") if isinstance(rows, dict) else rows
+    for row in data or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("profileId") == 1:
+            continue
+        raw = row.get(id_key)
+        if raw is None:
+            continue
+        out.append(int(raw))
+    return out
+
+
+def apply_english_library(get, post) -> None:
+    """Assign English profile (id 1) to series/movies missing it. get/post are HTTP adapters."""
+    for series_id in titles_needing_english(get("/series"), "sonarrSeriesId"):
+        post(f"/series?seriesid={series_id}&profileid=1")
+    for movie_id in titles_needing_english(get("/movies"), "radarrId"):
+        post(f"/movies?radarrid={movie_id}&profileid=1")
+
+
+def apply_english_over_http(base_url: str, apikey: str) -> None:
+    """Production adapter: Bazarr REST + languages form POST."""
+    import urllib.request
+
+    base = base_url.rstrip("/")
+    headers = {"X-API-KEY": apikey, "Accept": "application/json"}
+
+    req = urllib.request.Request(
+        f"{base}/api/system/settings",
+        data=english_settings_form(),
+        method="POST",
+        headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        if resp.status not in (200, 204):
+            raise RuntimeError("bazarr settings post failed")
+
+    def get(path: str) -> object:
+        r = urllib.request.Request(f"{base}/api{path}", headers=headers)
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            return json.load(resp)
+
+    def post(path: str) -> None:
+        r = urllib.request.Request(
+            f"{base}/api{path}", data=b"", method="POST", headers=headers
+        )
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            if resp.status not in (200, 204):
+                raise RuntimeError(path)
+
+    apply_english_library(get, post)
+
+
 def apply_direct_play_config(
     text: str, *, sonarr_apikey: str, radarr_apikey: str
 ) -> str:

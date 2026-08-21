@@ -63,6 +63,11 @@ def score_for(app: str, trash_id: str) -> int:
     raise KeyError(trash_id)
 
 
+def score_map(app: str) -> dict[str, int]:
+    """Every TRaSH id this playback target scores, mapped to HARD_REJECT or PREFERRED."""
+    return {tid: score_for(app, tid) for tid in _catalog(app).values()}
+
+
 def assigned_score(yml: str, trash_id: str) -> int:
     idx = yml.index(trash_id)
     match = re.search(r"score:\s*(-?\d+)", yml[idx : idx + 1200])

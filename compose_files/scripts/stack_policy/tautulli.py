@@ -161,6 +161,70 @@ def webhook_url_from_config(config: Mapping[str, object]) -> str:
     return ""
 
 
+def new_webhook_notifier_id(notifiers: object) -> int | None:
+    """Id of a webhook we just added (empty friendly_name) or the only webhook."""
+    rows = [n for n in (notifiers if isinstance(notifiers, list) else []) if isinstance(n, Mapping)]
+    webhooks = [
+        n
+        for n in rows
+        if n.get("agent_id") == WEBHOOK_AGENT_ID or n.get("agent_name") == "webhook"
+    ]
+    if len(webhooks) == 1:
+        try:
+            return int(webhooks[0]["id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+    unnamed = [n for n in webhooks if not n.get("friendly_name")]
+    if len(unnamed) != 1:
+        return None
+    try:
+        return int(unnamed[0]["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def ensure_simkl_webhook(call, webhook: str) -> str:
+    """Create or update the SIMKL watched notifier. ``call(cmd, extra=None)`` is the Tautulli adapter."""
+    webhook = webhook.strip()
+    notifiers = call("get_notifiers") or []
+    notifier_id = find_simkl_notifier_id(notifiers)
+    if notifier_id is None:
+        call("add_notifier_config", {"agent_id": str(WEBHOOK_AGENT_ID)})
+        notifiers = call("get_notifiers") or []
+        notifier_id = find_simkl_notifier_id(notifiers) or new_webhook_notifier_id(notifiers)
+        if notifier_id is None:
+            raise RuntimeError("could not identify new webhook notifier")
+    config = call("get_notifier_config", {"notifier_id": str(notifier_id)}) or {}
+    if isinstance(config, Mapping) and webhook_url_from_config(config) == webhook:
+        return "ok"
+    fields = webhook_notifier_fields(webhook)
+    fields["notifier_id"] = str(notifier_id)
+    call("set_notifier_config", fields)
+    return "updated"
+
+
+def tautulli_http_call(base_url: str, api_key: str):
+    """Production adapter: Tautulli ``/api/v2`` over HTTP."""
+    import json
+    import urllib.parse
+    import urllib.request
+
+    base = base_url.rstrip("/")
+
+    def call(cmd: str, extra: dict | None = None) -> object:
+        params = {"apikey": api_key, "cmd": cmd}
+        if extra:
+            params.update(extra)
+        url = base + "/api/v2?" + urllib.parse.urlencode(params)
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            payload = json.load(resp)
+        if payload.get("response", {}).get("result") != "success":
+            raise RuntimeError(payload)
+        return payload["response"].get("data")
+
+    return call
+
+
 def _parser(ini_text: str) -> configparser.ConfigParser:
     parser = configparser.ConfigParser()
     parser.optionxform = str
