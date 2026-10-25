@@ -238,8 +238,16 @@ services:
         compress: "false"
   plex:
     <<: [*service-defaults, *mem-3g]
-    image: lscr.io/linuxserver/plex:latest
+    # Locally built image: LSIO plex + Freeloader feature-unlock .so (see freeloader/).
+    # Plex updates are rebuilds: bash scripts/build-freeloader-plex.sh, then up -d plex.
+    image: freeloader-plex:lsio
+    build:
+      context: ./freeloader
     container_name: plex
+    labels:
+      # Watchtower must stay off plex: a pull would replace this patched local
+      # image with upstream and silently drop the feature unlock.
+      com.centurylinklabs.watchtower.enable: "false"
     depends_on:
       plex-init:
         condition: service_completed_successfully
@@ -249,6 +257,9 @@ services:
       PLEX_CLAIM: ${PLEX_CLAIM:-}
       # LAN URL for Xbox/TV clients; set PLEX_ADVERTISE_IP in .env (see .env.example).
       ADVERTISE_IP: ${PLEX_ADVERTISE_IP:-}
+      # Optional Freeloader hook trace. Set in .env to a path under /config;
+      # leave empty for normal runs.
+      PLEX_TRAFFIC_LOG: ${PLEX_TRAFFIC_LOG:-}
     ports:
       - 32400:32400
       - 32400:32400/udp
@@ -267,6 +278,7 @@ services:
       - ${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}:/transcode
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
+      - ./freeloader/wrapper.sh:/usr/lib/plexmediaserver/plex-crack-wrapper.sh:ro
     devices:
       - /dev/dri:/dev/dri
   tautulli:
