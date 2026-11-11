@@ -1,0 +1,13 @@
+[Unit]
+Description=Restic snapshot of media-server appdata
+RequiresMountsFor=@@MOUNTS@@
+After=media-server.service
+
+[Service]
+Type=oneshot
+StateDirectory=media-server
+CacheDirectory=media-server
+Environment=RESTIC_CACHE_DIR=/var/cache/media-server/restic
+Nice=10
+IOSchedulingClass=idle
+ExecStart=@@COMPOSE_DIR@@/scripts/backup-appdata.sh

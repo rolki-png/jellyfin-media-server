@@ -3,7 +3,7 @@ Description=Media Server Docker Compose (hardlink-safe *arr stack)
 Documentation=file:///home/rolki/projects/All-jellyfin-media-server/compose_files/systemd/README.md
 Requires=docker.service
 # Disks + mergerfs must be up before containers bind COMMON_PATH / branch roots.
-RequiresMountsFor=/mnt/combined-media /mnt/samsung-media /mnt/4tb-media-2
+RequiresMountsFor=/mnt/combined-media /mnt/samsung-media /mnt/4tb-media-2 /mnt/samsung-media/Isyrr
 After=docker.service network-online.target
 
 [Service]

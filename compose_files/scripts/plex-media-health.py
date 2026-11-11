@@ -5,7 +5,7 @@ import sqlite3
 import sys
 
 DB = (
-    "/mnt/samsung-media/Isyrr/configs/plex/Library/Application Support/"
+    "/mnt/samsung-media/Isyrr/appdata/plex/Library/Application Support/"
     "Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db"
 )
 

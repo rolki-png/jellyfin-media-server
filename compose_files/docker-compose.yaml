@@ -18,6 +18,13 @@ x-linuxserver-env: &linuxserver-env
 x-tz-env: &tz-env
   TZ: ${TZ:-Etc/UTC}
 
+# Docker marks a hung app "unhealthy"; media-monitor.timer restarts it and alerts.
+x-health: &health
+  interval: 1m
+  timeout: 10s
+  retries: 3
+  start_period: 2m
+
 # Cap container memory to reduce cgroup memory-accounting pressure (see kswapd bad-page freezes).
 # mem_limit == memswap_limit disables swap. deploy.resources.limits.memory cannot set that,
 # so these Compose service keys are intentional, not leftovers from Swarm-era files.
@@ -53,12 +60,15 @@ services:
       # DOCKER_MODS: ghcr.io/gabe565/linuxserver-mod-vuetorrent
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/qbittorrent:/config
+      - ${APPDATA_PATH}/qbittorrent:/config
       - ${COMMON_PATH}/qbittorrent/downloads:/downloads
     ports:
       - 8080:8080
       - 6881:6881
       - 6881:6881/udp
+    healthcheck:
+      <<: *health
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/"]
   flaresolverr:
     <<: [*service-defaults, *mem-512m]
     image: ghcr.io/flaresolverr/flaresolverr:latest
@@ -80,7 +90,7 @@ services:
     environment:
       <<: *linuxserver-env
     volumes:
-      - ${COMMON_PATH}/configs/prowlarr:/config
+      - ${APPDATA_PATH}/prowlarr:/config
     ports:
       - 9696:9696
   jackett:
@@ -90,11 +100,11 @@ services:
     environment:
       <<: *linuxserver-env
     volumes:
-      - ${COMMON_PATH}/configs/jackett:/config
+      - ${APPDATA_PATH}/jackett:/config
     ports:
       - 9117:9117
   sonarr:
-    <<: [*service-defaults, *mem-512m]
+    <<: [*service-defaults, *mem-1g]
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
     environment:
@@ -106,15 +116,18 @@ services:
       # Single COMMON_PATH mount so imports can hardlink downloads↔library
       # (separate /tv and /downloads binds look like different filesystems to ln).
       - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/sonarr:/config
+      - ${APPDATA_PATH}/sonarr:/config
       # Branch roots for same-disk-import.sh (lazy migrate + hardlink).
       - ${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}:${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}
       - ${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}:${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}
       - ./scripts/same-disk-import.sh:/scripts/same-disk-import.sh:ro
     ports:
       - 8989:8989
+    healthcheck:
+      <<: *health
+      test: ["CMD", "curl", "-fsS", "http://localhost:8989/ping"]
   radarr:
-    <<: [*service-defaults, *mem-512m]
+    <<: [*service-defaults, *mem-1g]
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
     environment:
@@ -126,13 +139,16 @@ services:
       # Single COMMON_PATH mount so imports can hardlink downloads↔library
       # (separate /movies and /downloads binds look like different filesystems to ln).
       - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/radarr:/config
+      - ${APPDATA_PATH}/radarr:/config
       # Branch roots for same-disk-import.sh (lazy migrate + hardlink).
       - ${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}:${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}
       - ${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}:${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}
       - ./scripts/same-disk-import.sh:/scripts/same-disk-import.sh:ro
     ports:
       - 7878:7878
+    healthcheck:
+      <<: *health
+      test: ["CMD", "curl", "-fsS", "http://localhost:7878/ping"]
   # Parked by default (Plex-first). Bring back:
   #   COMPOSE_PROFILES=jellyfin docker compose up -d jellyfin
   jellyfin-init:
@@ -151,7 +167,7 @@ services:
         chown -R ${PUID:-1000}:${PGID:-1000} /config /cache
         echo "jellyfin-init: chowned /config and /cache to ${PUID:-1000}:${PGID:-1000}"
     volumes:
-      - ${COMMON_PATH}/configs/jellyfin:/config
+      - ${APPDATA_PATH}/jellyfin:/config
       - ${COMMON_PATH}/jellyfin/cache:/cache
     environment:
       PUID: ${PUID:-1000}
@@ -180,7 +196,7 @@ services:
       # 1900/SSDP omitted — Home Assistant binds host UDP 1900; Samsung app uses 8096 directly.
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/jellyfin:/config
+      - ${APPDATA_PATH}/jellyfin:/config
       - ${COMMON_PATH}/jellyfin/cache:/cache
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
@@ -202,7 +218,7 @@ services:
     ports:
       - 5055:5055
     volumes:
-      - ${COMMON_PATH}/configs/jellyseerr:/app/config
+      - ${APPDATA_PATH}/jellyseerr:/app/config
     healthcheck:
       test:
         [
@@ -223,7 +239,7 @@ services:
     user: "0:0"
     command: ["/bin/sh", "/scripts/plex-init.sh"]
     volumes:
-      - ${COMMON_PATH}/configs/plex:/config
+      - ${APPDATA_PATH}/plex:/config
       - ${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}:/transcode
       - ./scripts/plex-init.sh:/scripts/plex-init.sh:ro
     environment:
@@ -238,8 +254,17 @@ services:
         compress: "false"
   plex:
     <<: [*service-defaults, *mem-3g]
-    image: lscr.io/linuxserver/plex:latest
+    # Locally built image: LSIO plex + Freeloader feature-unlock .so (see freeloader/).
+    # Plex updates are rebuilds: bash scripts/build-freeloader-plex.sh, then up -d plex.
+    image: freeloader-plex:lsio
+    build:
+      context: ./freeloader
     container_name: plex
+    labels:
+      # Overrides the x-service-defaults merge. Watchtower must stay off plex:
+      # a pull would replace this patched local image with upstream and silently
+      # drop the feature unlock. stack_policy.layout enforces the "false" value.
+      com.centurylinklabs.watchtower.enable: "false"
     depends_on:
       plex-init:
         condition: service_completed_successfully
@@ -249,6 +274,9 @@ services:
       PLEX_CLAIM: ${PLEX_CLAIM:-}
       # LAN URL for Xbox/TV clients; set PLEX_ADVERTISE_IP in .env (see .env.example).
       ADVERTISE_IP: ${PLEX_ADVERTISE_IP:-}
+      # Optional Freeloader hook trace. Set in .env to a path under /config to
+      # preload plexmediaserver_traffic_logger.so; leave empty for normal runs.
+      PLEX_TRAFFIC_LOG: ${PLEX_TRAFFIC_LOG:-}
     ports:
       - 32400:32400
       - 32400:32400/udp
@@ -261,14 +289,20 @@ services:
       - 32414:32414/udp
     volumes:
       - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/plex:/config
+      # SQLite metadata on local SSD (APPDATA_PATH), not mergerfs.
+      - ${APPDATA_PATH}/plex:/config
       # Keep transcode off mergerfs — FUSE is too slow for live streams.
       # homelab-setup.sh sets Plex TranscoderTempDirectory=/transcode; mount must be local disk.
       - ${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}:/transcode
       - ${COMMON_PATH}/sonarr/tv:/data/tvshows
       - ${COMMON_PATH}/radarr/movies:/data/movies
+      # Host wrapper: PLEX_TRAFFIC_LOG preload without image rebuild.
+      - ./freeloader/wrapper.sh:/usr/lib/plexmediaserver/plex-crack-wrapper.sh:ro
     devices:
       - /dev/dri:/dev/dri
+    healthcheck:
+      <<: *health
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:32400/identity"]
   tautulli:
     <<: [*service-defaults, *mem-512m]
     image: lscr.io/linuxserver/tautulli:latest
@@ -278,7 +312,7 @@ services:
     environment:
       <<: *linuxserver-env
     volumes:
-      - ${COMMON_PATH}/configs/tautulli:/config
+      - ${APPDATA_PATH}/tautulli:/config
     ports:
       - 8181:8181
   unpackerr:
@@ -303,11 +337,11 @@ services:
       UN_RADARR_0_PATHS_0: /downloads
     volumes:
       - ${COMMON_PATH}/qbittorrent/downloads:/downloads
-      - ${COMMON_PATH}/configs/unpackerr:/config
-      - ${COMMON_PATH}/configs/unpackerr/radarr_api_key:/run/secrets/radarr_api_key:ro
-      - ${COMMON_PATH}/configs/unpackerr/sonarr_api_key:/run/secrets/sonarr_api_key:ro
+      - ${APPDATA_PATH}/unpackerr:/config
+      - ${APPDATA_PATH}/unpackerr/radarr_api_key:/run/secrets/radarr_api_key:ro
+      - ${APPDATA_PATH}/unpackerr/sonarr_api_key:/run/secrets/sonarr_api_key:ro
   bazarr:
-    <<: [*service-defaults, *mem-256m]
+    <<: [*service-defaults, *mem-512m]
     image: lscr.io/linuxserver/bazarr:latest
     container_name: bazarr
     depends_on:
@@ -320,7 +354,7 @@ services:
     volumes:
       # Same COMMON_PATH as *arr so sidecar SRT lands next to the video (no path maps).
       - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/bazarr:/config
+      - ${APPDATA_PATH}/bazarr:/config
   recyclarr:
     <<: [*service-defaults, *mem-256m]
     # Recyclarr no longer publishes :latest. Major tag :8 receives 8.x updates.
@@ -352,6 +386,11 @@ services:
       # See https://watchtower.nickfedor.com/latest/advanced-features/linked-containers/
       WATCHTOWER_ROLLING_RESTART: "false"
       WATCHTOWER_TIMEOUT: "120s"
+      # Notify about new images instead of pulling them: an unattended :latest bump
+      # can break the *arr pipeline silently. Update deliberately with
+      # `docker compose pull && docker compose up -d` (see AGENTS.md).
+      WATCHTOWER_MONITOR_ONLY: ${WATCHTOWER_MONITOR_ONLY:-true}
+      WATCHTOWER_NOTIFICATION_URL: ${WATCHTOWER_NOTIFICATION_URL:-}
       # Poll while the host is on (default 6h). Do not set both poll interval and schedule.
       # For a fixed daily time instead: set WATCHTOWER_SCHEDULE in .env and clear
       # WATCHTOWER_POLL_INTERVAL (empty) so this default is unused.
@@ -359,3 +398,96 @@ services:
       WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+  # NZB360-style control center (Sonarr/Radarr/qBit/Plex + Docker). First visit: setup wizard.
+  # Use compose DNS URLs in the wizard: http://sonarr:8989, http://radarr:7878,
+  # http://qbittorrent:8080, http://plex:32400
+  # Entrypoint patches Panelarr for qBittorrent 5.x login (204+cookie, not body "Ok.").
+  panelarr:
+    <<: [*service-defaults, *mem-512m]
+    image: ghcr.io/syms-dev/panelarr:latest
+    container_name: panelarr
+    entrypoint: ["/bin/sh", "/scripts/panelarr-entrypoint.sh"]
+    environment:
+      <<: *tz-env
+    ports:
+      - 8000:8000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${APPDATA_PATH}/panelarr:/config
+      - ./scripts/panelarr-entrypoint.sh:/scripts/panelarr-entrypoint.sh:ro
+  # Dashboard beside Panelarr (same compose DNS). First visit creates the admin user.
+  # Apps: http://sonarr:8989, http://radarr:7878, http://qbittorrent:8080, http://plex:32400,
+  # http://seerr:5055, http://tautulli:8181, http://bazarr:6767, http://jackett:9117
+  # SECRET_ENCRYPTION_KEY encrypts integration secrets in /appdata; keep the .env value.
+  homarr:
+    <<: [*service-defaults, *mem-1g]
+    image: ghcr.io/homarr-labs/homarr:latest
+    container_name: homarr
+    environment:
+      <<: *tz-env
+      SECRET_ENCRYPTION_KEY: ${HOMARR_SECRET_ENCRYPTION_KEY:-}
+    ports:
+      - 7575:7575
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${APPDATA_PATH}/homarr:/appdata
+
+  # Paperless-ngx document archive (http://localhost:8010). SQLite under APPDATA_PATH/paperless/data
+  # (nightly `sqlite3 .backup` by backup-appdata.sh). Drop files into APPDATA_PATH/paperless/consume.
+  # PAPERLESS_URL must be the URL you browse; extra origins cover LAN and tailnet IP access.
+  paperless-redis:
+    <<: [*service-defaults, *mem-256m]
+    image: docker.io/library/redis:8
+    container_name: paperless-redis
+    healthcheck:
+      <<: *health
+      test: ["CMD", "redis-cli", "ping"]
+  # Office documents, e-mails and RTF: Tika extracts text, Gotenberg renders the PDF archive copy.
+  paperless-gotenberg:
+    <<: [*service-defaults, *mem-1g]
+    image: docker.io/gotenberg/gotenberg:8
+    container_name: paperless-gotenberg
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=file:///tmp/.*
+  # Tika 4 removed the /tika/form endpoints paperless calls; stay on 3.x until paperless moves.
+  paperless-tika:
+    <<: [*service-defaults, *mem-1g]
+    image: docker.io/apache/tika:3.3.3.0
+    container_name: paperless-tika
+  paperless:
+    <<: [*service-defaults, *mem-3g]
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: paperless
+    depends_on:
+      - paperless-redis
+      - paperless-gotenberg
+      - paperless-tika
+    environment:
+      PAPERLESS_REDIS: redis://paperless-redis:6379
+      PAPERLESS_TIKA_ENABLED: "1"
+      PAPERLESS_TIKA_ENDPOINT: http://paperless-tika:9998
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://paperless-gotenberg:3000
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:?set PAPERLESS_SECRET_KEY in .env}
+      PAPERLESS_URL: ${PAPERLESS_URL:?set PAPERLESS_URL in .env}
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: ${PAPERLESS_EXTRA_ORIGINS:-}
+      PAPERLESS_ALLOWED_HOSTS: "*"
+      PAPERLESS_ADMIN_USER: ${PAPERLESS_ADMIN_USER:-admin}
+      PAPERLESS_ADMIN_PASSWORD: ${PAPERLESS_ADMIN_PASSWORD:?set PAPERLESS_ADMIN_PASSWORD in .env}
+      PAPERLESS_TIME_ZONE: ${TZ:-Etc/UTC}
+      PAPERLESS_OCR_LANGUAGE: ${PAPERLESS_OCR_LANGUAGE:-eng}
+      PAPERLESS_OCR_LANGUAGES: ${PAPERLESS_OCR_LANGUAGES:-}
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_THREADS_PER_WORKER: "2"
+      PAPERLESS_CONSUMER_RECURSIVE: "true"
+      PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
+      USERMAP_UID: ${PUID:-1000}
+      USERMAP_GID: ${PGID:-1000}
+    ports:
+      - 8010:8000
+    volumes:
+      - ${APPDATA_PATH}/paperless/data:/usr/src/paperless/data
+      - ${APPDATA_PATH}/paperless/media:/usr/src/paperless/media
+      - ${APPDATA_PATH}/paperless/export:/usr/src/paperless/export
+      - ${APPDATA_PATH}/paperless/consume:/usr/src/paperless/consume

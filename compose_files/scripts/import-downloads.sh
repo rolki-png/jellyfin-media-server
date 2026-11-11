@@ -12,9 +12,10 @@ source "${ENV_FILE}"
 set +a
 
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"
+APPDATA_PATH="${APPDATA_PATH:?APPDATA_PATH not set}"
 DOWNLOADS="${COMMON_PATH}/qbittorrent/downloads"
-RADARR_KEY="$(grep -oP '(?<=<ApiKey>)[^<]+' "${COMMON_PATH}/configs/radarr/config.xml")"
-SONARR_KEY="$(grep -oP '(?<=<ApiKey>)[^<]+' "${COMMON_PATH}/configs/sonarr/config.xml")"
+RADARR_KEY="$(grep -oP '(?<=<ApiKey>)[^<]+' "${APPDATA_PATH}/radarr/config.xml")"
+SONARR_KEY="$(grep -oP '(?<=<ApiKey>)[^<]+' "${APPDATA_PATH}/sonarr/config.xml")"
 
 log() { echo "==> $*"; }
 

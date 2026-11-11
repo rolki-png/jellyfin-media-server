@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Apply stack policy to Radarr, Sonarr, qBittorrent, Recyclarr, Unpackerr, Bazarr, Plex, and Tautulli (SIMKL).
-# --mode=boot  hardlink + Plex host prefs only (systemd ExecStartPost; no queue wipes / qBit restart)
+# --mode=boot  hardlink + Plex host prefs + quality profiles + recent missing search
+#              (no queue wipes / qBit restart / Recyclarr)
 # --mode=all   full first-run / manual (default)
 set -euo pipefail
 
@@ -22,10 +23,17 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+if ! command docker info >/dev/null 2>&1; then
+  # sudo docker is the engine binary, not this function.
+  # shellcheck disable=SC2032,SC2033
+  docker() { sudo docker "$@"; }
+fi
+
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"
-RADARR_CONFIG="${COMMON_PATH}/configs/radarr/config.xml"
-SONARR_CONFIG="${COMMON_PATH}/configs/sonarr/config.xml"
-QBIT_CATEGORIES="${COMMON_PATH}/configs/qbittorrent/qBittorrent/categories.json"
+APPDATA_PATH="${APPDATA_PATH:?APPDATA_PATH not set}"
+RADARR_CONFIG="${APPDATA_PATH}/radarr/config.xml"
+SONARR_CONFIG="${APPDATA_PATH}/sonarr/config.xml"
+QBIT_CATEGORIES="${APPDATA_PATH}/qbittorrent/qBittorrent/categories.json"
 RECYCLARR_SECRETS="${COMPOSE_DIR}/recyclarr/secrets.yml"
 
 wait_for_path() {
@@ -80,6 +88,31 @@ fix_media_management() {
   arr_get "${port}" "${key}" "/api/v3/config/mediamanagement" \
     | policy patch-media-mgmt \
     | arr_put "${port}" "${key}" "/api/v3/config/mediamanagement"
+}
+
+fix_indexers() {
+  local port=$1 key=$2 name=$3
+  log "Allowing ${name} ncore grabs with 0 reported seeders (include 720p/HD cats)"
+  # Env prefix on the left of a pipe does not apply to python on the right.
+  arr_get "${port}" "${key}" "/api/v3/indexer" | PORT="${port}" KEY="${key}" python3 -c '
+import json, os, sys, urllib.error, urllib.request
+from stack_policy.arr import patch_indexer
+port, key = os.environ["PORT"], os.environ["KEY"]
+for row in json.load(sys.stdin):
+    iid = row["id"]
+    body = json.dumps(patch_indexer(row)).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/v3/indexer/{iid}",
+        data=body,
+        method="PUT",
+        headers={"X-Api-Key": key, "Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+        print("patched indexer id=%s" % iid, flush=True)
+    except urllib.error.HTTPError as e:
+        print("skip indexer id=%s HTTP %s" % (iid, e.code), flush=True)
+'
 }
 
 fix_download_client() {
@@ -177,6 +210,76 @@ trigger_download_scan() {
     | arr_post 8989 "${SONARR_KEY}" "/api/v3/command" || true
 }
 
+# Paginate wanted/missing into a JSON array (RSS does not look backward after downtime).
+collect_wanted_missing() {
+  local port=$1 key=$2
+  PORT="${port}" KEY="${key}" python3 - <<'PY'
+import json, os, urllib.request
+port, key = os.environ["PORT"], os.environ["KEY"]
+page, records = 1, []
+while True:
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/v3/wanted/missing?page={page}&pageSize=100",
+        headers={"X-Api-Key": key},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.load(resp)
+    batch = data.get("records") or []
+    records.extend(batch)
+    total = int(data.get("totalRecords") or 0)
+    if page * 100 >= total or not batch:
+        break
+    page += 1
+print(json.dumps(records))
+PY
+}
+
+trigger_recent_missing_search() {
+  local days="${CATCHUP_LOOKBACK_DAYS:-14}"
+  local today
+  today="$(date +%F)"
+  log "Searching recent missing titles (lookback=${days}d, today=${today})"
+
+  local ep_ids ep_cmd
+  ep_ids="$(collect_wanted_missing 8989 "${SONARR_KEY}" | policy recent-missing-episode-ids --days "${days}" --today "${today}")"
+  ep_cmd="$(printf '%s' "${ep_ids}" | policy episode-search-command || true)"
+  if [[ -n "${ep_cmd}" ]]; then
+    log "Sonarr EpisodeSearch ids=${ep_ids}"
+    printf '%s' "${ep_cmd}" | arr_post 8989 "${SONARR_KEY}" "/api/v3/command" || true
+  else
+    log "Sonarr: no recent missing episodes"
+  fi
+
+  local mov_ids mov_cmd
+  mov_ids="$(collect_wanted_missing 7878 "${RADARR_KEY}" | policy recent-missing-movie-ids --days "${days}" --today "${today}")"
+  mov_cmd="$(printf '%s' "${mov_ids}" | policy movies-search-command || true)"
+  if [[ -n "${mov_cmd}" ]]; then
+    log "Radarr MoviesSearch ids=${mov_ids}"
+    printf '%s' "${mov_cmd}" | arr_post 7878 "${RADARR_KEY}" "/api/v3/command" || true
+  else
+    log "Radarr: no recent missing movies"
+  fi
+}
+
+ensure_qbit_unlimited_seed() {
+  if ! docker ps --format '{{.Names}}' | grep -qx qbittorrent; then
+    log "qBittorrent not running — skip unlimited seed prefs"
+    return 0
+  fi
+  log "Disabling qBittorrent torrent-count caps (private-tracker seeding)"
+  local json
+  json="$(policy qbit-seed-prefs)"
+  # WebUI LocalHostAuth only trusts the container loopback, not the published host port.
+  docker exec qbittorrent curl -sf --max-time 10 --data-urlencode "json=${json}" \
+    "http://127.0.0.1:8080/api/v2/app/setPreferences" >/dev/null \
+    || { log "qBittorrent setPreferences failed"; return 1; }
+  docker exec qbittorrent curl -sf --max-time 10 --data "hashes=all" \
+    "http://127.0.0.1:8080/api/v2/torrents/start" >/dev/null 2>&1 \
+    || docker exec qbittorrent curl -sf --max-time 10 --data "hashes=all" \
+      "http://127.0.0.1:8080/api/v2/torrents/resume" >/dev/null 2>&1 \
+    || true
+}
+
 setup_qbit_categories() {
   log "Configuring qBittorrent category save paths"
   mkdir -p "${COMMON_PATH}/qbittorrent/downloads/radarr" \
@@ -193,6 +296,52 @@ path.write_text(json.dumps(data, indent=4) + "\n")
 PY
 }
 
+patch_any_profile() {
+  local port=$1 key=$2 name=$3
+  log "Allowing 720p on ${name} stock Any profile (Seerr leftover titles)"
+  arr_get "${port}" "${key}" "/api/v3/qualityprofile" | PORT="${port}" KEY="${key}" python3 -c '
+import json, os, sys, urllib.request
+from stack_policy.arr import allow_named_qualities
+port, key = os.environ["PORT"], os.environ["KEY"]
+want = {"WEB 720p", "HDTV-720p", "WEBDL-720p", "WEBRip-720p", "WEB 480p", "HDTV-480p", "SDTV"}
+for row in json.load(sys.stdin):
+    if row.get("name") != "Any":
+        continue
+    body = json.dumps(allow_named_qualities(row, want)).encode()
+    iid = row["id"]
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/v3/qualityprofile/{iid}",
+        data=body, method="PUT",
+        headers={"X-Api-Key": key, "Content-Type": "application/json"},
+    )
+    urllib.request.urlopen(req, timeout=30).read()
+    print("patched Any id=%s" % iid, flush=True)
+'
+}
+
+ensure_profile_language_any() {
+  local port=$1 key=$2 name=$3
+  log "Allowing Any language on ${name} quality profiles (HuN dual-audio packs)"
+  arr_get "${port}" "${key}" "/api/v3/qualityprofile" | PORT="${port}" KEY="${key}" python3 -c '
+import json, os, sys, urllib.request
+from stack_policy.arr import with_any_language
+port, key = os.environ["PORT"], os.environ["KEY"]
+for row in json.load(sys.stdin):
+    lang = (row.get("language") or {}).get("name")
+    if lang == "Any":
+        continue
+    body = json.dumps(with_any_language(row)).encode()
+    iid = row["id"]
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/v3/qualityprofile/{iid}",
+        data=body, method="PUT",
+        headers={"X-Api-Key": key, "Content-Type": "application/json"},
+    )
+    urllib.request.urlopen(req, timeout=30).read()
+    print("language Any id=%s %s (was %s)" % (iid, row.get("name"), lang), flush=True)
+'
+}
+
 set_default_quality_profiles() {
   log "Applying UHD quality profiles to existing media"
   local radarr_name sonarr_name radarr_profile sonarr_profile tmp
@@ -204,20 +353,28 @@ set_default_quality_profiles() {
   sonarr_profile="$(arr_get 8989 "${SONARR_KEY}" "/api/v3/qualityprofile" | policy profile-id "${sonarr_name}" || true)"
 
   if [[ -n "${radarr_profile:-}" ]]; then
-    arr_get 7878 "${RADARR_KEY}" "/api/v3/movie" \
-      | policy editor-payload movie "${radarr_profile}" > "${tmp}/radarr-editor.json"
-    if [[ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["movieIds"]))' "${tmp}/radarr-editor.json")" -gt 0 ]]; then
-      arr_put 7878 "${RADARR_KEY}" "/api/v3/movie/editor" < "${tmp}/radarr-editor.json"
-      log "Updated Radarr movies to ${radarr_name}"
+    if arr_get 7878 "${RADARR_KEY}" "/api/v3/movie" > "${tmp}/radarr-movies.json" \
+      && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "${tmp}/radarr-movies.json" 2>/dev/null; then
+      policy editor-payload movie "${radarr_profile}" < "${tmp}/radarr-movies.json" > "${tmp}/radarr-editor.json"
+      if [[ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["movieIds"]))' "${tmp}/radarr-editor.json")" -gt 0 ]]; then
+        arr_put 7878 "${RADARR_KEY}" "/api/v3/movie/editor" < "${tmp}/radarr-editor.json"
+        log "Updated Radarr movies to ${radarr_name}"
+      fi
+    else
+      log "Radarr movie list unavailable — skip profile editor"
     fi
   fi
 
   if [[ -n "${sonarr_profile:-}" ]]; then
-    arr_get 8989 "${SONARR_KEY}" "/api/v3/series" \
-      | policy editor-payload series "${sonarr_profile}" > "${tmp}/sonarr-editor.json"
-    if [[ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["seriesIds"]))' "${tmp}/sonarr-editor.json")" -gt 0 ]]; then
-      arr_put 8989 "${SONARR_KEY}" "/api/v3/series/editor" < "${tmp}/sonarr-editor.json"
-      log "Updated Sonarr series to ${sonarr_name}"
+    if arr_get 8989 "${SONARR_KEY}" "/api/v3/series" > "${tmp}/sonarr-series.json" \
+      && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "${tmp}/sonarr-series.json" 2>/dev/null; then
+      policy editor-payload series "${sonarr_profile}" < "${tmp}/sonarr-series.json" > "${tmp}/sonarr-editor.json"
+      if [[ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["seriesIds"]))' "${tmp}/sonarr-editor.json")" -gt 0 ]]; then
+        arr_put 8989 "${SONARR_KEY}" "/api/v3/series/editor" < "${tmp}/sonarr-editor.json"
+        log "Updated Sonarr series to ${sonarr_name}"
+      fi
+    else
+      log "Sonarr series list unavailable — skip profile editor"
     fi
   fi
 
@@ -235,7 +392,7 @@ EOF
 
 write_unpackerr_secrets() {
   log "Writing Unpackerr API key files"
-  local unpackerr_dir="${COMMON_PATH}/configs/unpackerr"
+  local unpackerr_dir="${APPDATA_PATH}/unpackerr"
   mkdir -p "${unpackerr_dir}"
   printf '%s' "${RADARR_KEY}" > "${unpackerr_dir}/radarr_api_key"
   printf '%s' "${SONARR_KEY}" > "${unpackerr_dir}/sonarr_api_key"
@@ -243,12 +400,12 @@ write_unpackerr_secrets() {
 }
 
 bazarr_config_path() {
-  local cfg="${COMMON_PATH}/configs/bazarr/config/config.yaml"
+  local cfg="${APPDATA_PATH}/bazarr/config/config.yaml"
   if [[ -f "${cfg}" ]]; then
     echo "${cfg}"
     return 0
   fi
-  cfg="${COMMON_PATH}/configs/bazarr/config.yaml"
+  cfg="${APPDATA_PATH}/bazarr/config.yaml"
   if [[ -f "${cfg}" ]]; then
     echo "${cfg}"
     return 0
@@ -307,7 +464,7 @@ remove_empty_plex_dir() {
 }
 
 plex_preferences_path() {
-  echo "${COMMON_PATH}/configs/plex/Library/Application Support/Plex Media Server/Preferences.xml"
+  echo "${APPDATA_PATH}/plex/Library/Application Support/Plex Media Server/Preferences.xml"
 }
 
 plex_auth_token() {
@@ -333,8 +490,8 @@ fix_plex_host() {
     return 0
   fi
 
-  policy apply-plex-prefs "${prefs}" --advertise "${PLEX_ADVERTISE_IP:-}"
-  log "Set Plex TranscoderTempDirectory=/transcode advertise=${PLEX_ADVERTISE_IP:-unset}"
+  policy apply-plex-prefs "${prefs}" --advertise "${PLEX_ADVERTISE_IP:-}" --lan-networks "${PLEX_LAN_NETWORKS:-}"
+  log "Set Plex TranscoderTempDirectory=/transcode advertise=${PLEX_ADVERTISE_IP:-unset} lan=${PLEX_LAN_NETWORKS:-auto}"
 }
 
 ensure_plex_notification() {
@@ -368,7 +525,7 @@ ensure_plex_notification() {
 }
 
 tautulli_config_path() {
-  echo "${COMMON_PATH}/configs/tautulli/config.ini"
+  echo "${APPDATA_PATH}/tautulli/config.ini"
 }
 
 wait_for_tautulli() {
@@ -385,8 +542,8 @@ wait_for_tautulli() {
 ensure_tautulli_simkl() {
   local cfg prefs
   cfg="$(tautulli_config_path)"
-  mkdir -p "${COMMON_PATH}/configs/tautulli"
-  chown "${PUID:-1000}:${PGID:-1000}" "${COMMON_PATH}/configs/tautulli"
+  mkdir -p "${APPDATA_PATH}/tautulli"
+  chown "${PUID:-1000}:${PGID:-1000}" "${APPDATA_PATH}/tautulli"
 
   if ! docker ps --format '{{.Names}}' | grep -qx tautulli; then
     log "Tautulli not running — start it, then re-run homelab-setup for SIMKL"
@@ -462,6 +619,43 @@ PY
     || log "Tautulli SIMKL webhook setup failed — add a Webhook agent in Tautulli (Watched trigger)"
 }
 
+ensure_plex_libraries() {
+  if ! docker ps --format '{{.Names}}' | grep -qx plex; then
+    return 0
+  fi
+  local token
+  token="$(plex_auth_token || true)"
+  if [[ -z "${token}" ]]; then
+    return 0
+  fi
+  local xml
+  xml="$(curl -sf --max-time 10 "http://localhost:32400/library/sections?X-Plex-Token=${token}" || true)"
+  if [[ "${xml}" != *'path="/data/movies"'* ]]; then
+    log "Creating Plex Movies library at /data/movies"
+    curl -sf --max-time 20 -X POST \
+      --get \
+      --data-urlencode "name=Movies" \
+      --data-urlencode "type=movie" \
+      --data-urlencode "agent=tv.plex.agents.movie" \
+      --data-urlencode "scanner=Plex Movie" \
+      --data-urlencode "language=en-US" \
+      --data-urlencode "location=/data/movies" \
+      "http://localhost:32400/library/sections?X-Plex-Token=${token}" >/dev/null || true
+  fi
+  if [[ "${xml}" != *'path="/data/tvshows"'* ]]; then
+    log "Creating Plex TV Shows library at /data/tvshows"
+    curl -sf --max-time 20 -X POST \
+      --get \
+      --data-urlencode "name=TV Shows" \
+      --data-urlencode "type=show" \
+      --data-urlencode "agent=tv.plex.agents.series" \
+      --data-urlencode "scanner=Plex TV Series" \
+      --data-urlencode "language=en-US" \
+      --data-urlencode "location=/data/tvshows" \
+      "http://localhost:32400/library/sections?X-Plex-Token=${token}" >/dev/null || true
+  fi
+}
+
 trigger_plex_library_scan() {
   if ! docker ps --format '{{.Names}}' | grep -qx plex; then
     return 0
@@ -471,13 +665,24 @@ trigger_plex_library_scan() {
   if [[ -z "${token}" ]]; then
     return 0
   fi
+  ensure_plex_libraries
   log "Triggering Plex library scan"
-  curl -sf --max-time 10 -X POST "http://localhost:32400/library/sections/3/refresh?X-Plex-Token=${token}" >/dev/null || true
-  curl -sf --max-time 10 -X POST "http://localhost:32400/library/sections/4/refresh?X-Plex-Token=${token}" >/dev/null || true
+  local keys
+  keys="$(curl -sf --max-time 10 "http://localhost:32400/library/sections?X-Plex-Token=${token}" \
+    | grep -oP 'Directory key="\K[0-9]+' || true)"
+  if [[ -z "${keys}" ]]; then
+    log "Plex still has no libraries after ensure"
+    return 0
+  fi
+  local key
+  for key in ${keys}; do
+    curl -sf --max-time 10 -X POST "http://localhost:32400/library/sections/${key}/refresh?X-Plex-Token=${token}" >/dev/null || true
+  done
 }
 
 apply_hardlink_policy() {
   setup_qbit_categories
+  ensure_qbit_unlimited_seed
   fix_media_management 7878 "${RADARR_KEY}" Radarr
   fix_media_management 8989 "${SONARR_KEY}" Sonarr
   ensure_root_folder 7878 "${RADARR_KEY}" Radarr "${COMMON_PATH}/radarr/movies"
@@ -486,12 +691,20 @@ apply_hardlink_policy() {
   ensure_remote_path_mapping 8989 "${SONARR_KEY}" Sonarr
   fix_download_client 7878 "${RADARR_KEY}" Radarr
   fix_download_client 8989 "${SONARR_KEY}" Sonarr
+  fix_indexers 7878 "${RADARR_KEY}" Radarr
+  fix_indexers 8989 "${SONARR_KEY}" Sonarr
+  patch_any_profile 7878 "${RADARR_KEY}" Radarr
+  patch_any_profile 8989 "${SONARR_KEY}" Sonarr
+  ensure_profile_language_any 7878 "${RADARR_KEY}" Radarr
+  ensure_profile_language_any 8989 "${SONARR_KEY}" Sonarr
+  set_default_quality_profiles
   ensure_same_disk_script 7878 "${RADARR_KEY}" Radarr
   ensure_same_disk_script 8989 "${SONARR_KEY}" Sonarr
   write_recyclarr_secrets
   write_unpackerr_secrets
   remove_empty_plex_dir
   fix_plex_host
+  ensure_plex_libraries
   ensure_plex_notification 7878 "${RADARR_KEY}" Radarr
   ensure_plex_notification 8989 "${SONARR_KEY}" Sonarr
   fix_bazarr
@@ -499,17 +712,19 @@ apply_hardlink_policy() {
 }
 
 main() {
-  log "Homelab setup mode=${MODE} COMMON_PATH=${COMMON_PATH}"
+  log "Homelab setup mode=${MODE} COMMON_PATH=${COMMON_PATH} APPDATA_PATH=${APPDATA_PATH}"
   apply_hardlink_policy
 
   if [[ "${MODE}" == "boot" ]]; then
-    log "Homelab setup complete (boot: skipped queue/scan/qBit restart/Recyclarr/profiles)"
+    trigger_recent_missing_search
+    log "Homelab setup complete (boot: skipped queue/scan/qBit restart/Recyclarr)"
     return 0
   fi
 
   clear_stuck_queue 7878 "${RADARR_KEY}" Radarr
   clear_stuck_queue 8989 "${SONARR_KEY}" Sonarr
   trigger_download_scan
+  trigger_recent_missing_search
   trigger_plex_library_scan
 
   if docker ps --format '{{.Names}}' | grep -qx qbittorrent; then
@@ -519,7 +734,6 @@ main() {
   fi
 
   run_recyclarr_sync
-  set_default_quality_profiles
   trigger_download_scan
   log "Homelab setup complete"
 }

@@ -22,6 +22,7 @@ Compose file: [`compose_files/docker-compose.yaml`](compose_files/docker-compose
 | Cloudflare helper | [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) (localhost only) | — |
 | Quality profiles | [Recyclarr](https://recyclarr.dev/) (TRaSH Guides, cron) | — |
 | Image updates | [Watchtower](https://watchtower.nickfedor.com/) (`nickfedor/watchtower`) | — |
+| Stack control UI | [Panelarr](https://panelarr.dev/) (`:8000`), [Homarr](https://homarr.dev/) (`:7575`) | — |
 
 Bring parked services back:
 
@@ -60,17 +61,19 @@ cp compose_files/.env.example compose_files/.env
 
 Edit `compose_files/.env`:
 
-- `COMMON_PATH` — absolute path for configs and media (mergerfs pool recommended)
+- `COMMON_PATH` — absolute mergerfs path for media and downloads (not SQLite configs)
+- `APPDATA_PATH` — absolute SSD path for Plex/*arr/qBittorrent `/config` (never mergerfs)
 - `TZ` — IANA timezone
 - `PUID` / `PGID` — `id -u` / `id -g` of the host user
 - `SAME_DISK_SSD_ROOT` / `SAME_DISK_HDD_ROOT` — mergerfs branch roots
 - `PLEX_ADVERTISE_IP` — LAN URL clients should use, e.g. `http://192.168.0.236:32400`
 - `PLEX_CLAIM` — one-time token from [plex.tv/claim](https://plex.tv/claim) (expires in a few minutes)
 - `SIMKL_PLEX_WEBHOOK_URL` — quoted unique URL from [simkl.com/apps/plex](https://simkl.com/apps/plex) (optional until SIMKL is needed)
+- `HOMARR_SECRET_ENCRYPTION_KEY` — 64 hex characters from `openssl rand -hex 32` (Homarr will not start without it)
 
 ```bash
 set -a && source compose_files/.env && set +a
-mkdir -p "${COMMON_PATH}" "${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}"
+mkdir -p "${COMMON_PATH}" "${APPDATA_PATH}" "${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}"
 bash compose_files/validate.sh
 cd compose_files
 docker compose --env-file .env up -d
@@ -98,8 +101,12 @@ Replace the host with your LAN IP if you are not on the server.
 | Bazarr | http://localhost:6767 |
 | Jellyfin (profile) | http://localhost:8096 |
 | Prowlarr (profile) | http://localhost:9696 |
+| Panelarr | http://localhost:8000 |
+| Homarr | http://localhost:7575 |
 
 FlareSolverr listens on `127.0.0.1:8191` on the host. Jackett reaches it as `http://flaresolverr:8191` on the Compose network.
+
+Panelarr (`:8000`) and Homarr (`:7575`) are both on the Compose network so you can point them at the same apps: `http://sonarr:8989`, `http://radarr:7878`, `http://qbittorrent:8080`, `http://plex:32400`, `http://seerr:5055`, `http://tautulli:8181`, `http://bazarr:6767`, `http://jackett:9117`. Panelarr’s first visit is a setup wizard. Homarr’s first visit creates the admin user. Set `HOMARR_SECRET_ENCRYPTION_KEY` before starting Homarr (`openssl rand -hex 32`).
 
 qBittorrent no longer ships a fixed default password. Read the generated password from `docker logs qbittorrent` and change it immediately.
 
@@ -143,6 +150,15 @@ docker compose up -d
 ```
 
 Do not run `docker compose down` as a routine update: that tears down the stack. Prefer `pull` + `up -d`, or Watchtower.
+
+### Plex is a local build (Freeloader unlock)
+
+`plex` runs `freeloader-plex:lsio`, built locally from `lscr.io/linuxserver/plex` plus the [Freeloader](https://github.com/authrequest/Freeloader) feature-unlock library ([`compose_files/freeloader/`](compose_files/freeloader/Dockerfile)). Watchtower is disabled on plex only, because pulling `:latest` would replace the patched image and drop the unlock. The base is version-locked (PMS 1.43.2.10687, the build the hook signatures match), so a Plex update means upstream adding support for a newer PMS, then rebuilding:
+
+```bash
+bash compose_files/scripts/build-freeloader-plex.sh
+cd compose_files && docker compose --env-file .env up -d plex
+```
 
 ## SIMKL (Plex watch history)
 

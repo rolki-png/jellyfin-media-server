@@ -9,7 +9,8 @@
 # Requires branch roots mounted in the *arr container (see compose).
 set -euo pipefail
 
-log() { echo "same-disk-import: $*" >&2; }
+# stdout so Sonarr/Radarr do not treat routine messages as script failures.
+log() { echo "same-disk-import: $*"; }
 
 COMMON_PATH="${COMMON_PATH:-/mnt/combined-media/Isyrr}"
 SSD_ROOT="${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}"

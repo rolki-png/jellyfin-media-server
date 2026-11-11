@@ -1,0 +1,9 @@
+[Unit]
+Description=Media-server health alerts (ntfy)
+After=docker.service
+
+[Service]
+Type=oneshot
+StateDirectory=media-server
+EnvironmentFile=@@COMPOSE_DIR@@/.env
+ExecStart=/usr/bin/python3 @@COMPOSE_DIR@@/scripts/stack-monitor.py

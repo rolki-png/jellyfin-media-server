@@ -6,9 +6,12 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from stack_policy.arr import (
+    allow_named_qualities,
+    with_any_language,
     custom_script_payload,
     first_download_client_id,
     has_plex_server_notification,
@@ -16,6 +19,7 @@ from stack_policy.arr import (
     has_root_folder,
     ids_needing_profile,
     patch_download_client,
+    patch_indexer,
     patch_media_management,
     plex_server_payload,
     quality_profile_id,
@@ -40,13 +44,32 @@ from stack_policy.tautulli import (
     SIMKL_WATCHED_JSON,
     WEBHOOK_AGENT_ID,
     apply_pms_ini,
+    apply_media_tags,
     ensure_simkl_webhook,
     find_simkl_notifier_id,
+    ids_from_plex_guids,
     plex_connection_from_prefs,
+    replay_empty_watched_webhooks,
+    scrobble_from_metadata,
     tautulli_api_key,
     webhook_notifier_fields,
 )
-from stack_policy.layout import check_arr_volumes, check_compose_doc
+from stack_policy.catchup import (
+    episode_search_command,
+    movies_search_command,
+    recent_missing_episode_ids,
+    recent_missing_movie_ids,
+)
+from stack_policy.layout import check_arr_volumes, check_compose_doc, check_plex_local_image
+from stack_policy.qbittorrent import seed_unlimited_preferences
+from stack_policy.monitor import (
+    Container,
+    backup_problems,
+    container_problems,
+    diff,
+    disk_problems,
+    restart_targets,
+)
 from stack_policy.plex_prefs import apply_host_prefs, ensure_transcoder_temp
 from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
 
@@ -77,6 +100,99 @@ class LayoutTests(unittest.TestCase):
         errors = check_compose_doc({"services": {"radarr": {"volumes": []}, "sonarr": {"volumes": []}}})
         self.assertEqual(len(errors), 2)
 
+    def test_freeloader_plex_with_watchtower_on_is_rejected(self) -> None:
+        errors = check_compose_doc(
+            {
+                "services": {
+                    "plex": {
+                        "image": "freeloader-plex:lsio",
+                        "labels": {"com.centurylinklabs.watchtower.enable": "true"},
+                    }
+                }
+            }
+        )
+        self.assertTrue(any("plex" in e and "watchtower" in e for e in errors))
+
+    def test_freeloader_plex_with_watchtower_off_is_ok(self) -> None:
+        errors = check_plex_local_image(
+            "plex",
+            {"image": "freeloader-plex:lsio", "labels": {"com.centurylinklabs.watchtower.enable": "false"}},
+        )
+        self.assertEqual(errors, [])
+
+    def test_freeloader_vendor_hooks_modern_per_user_feature_bits(self) -> None:
+        """Bitset-only Freeloader leaves Marker/Skip Intro gated on PMS 1.43.2.
+
+        The vendored hook.cpp must also sig-scan the modern per-user feature
+        lookup (and must not return early right after installing bitset_init).
+        """
+        vendor = Path(__file__).resolve().parents[1] / "freeloader" / "vendor"
+        hook = (vendor / "src" / "hook.cpp").read_text(encoding="utf-8")
+        version = (vendor / "VERSION").read_text(encoding="utf-8")
+        self.assertIn("6efe3c8be82c0b4a3ac13ebd17a3fe101fc4927c", version)
+        self.assertIn(
+            "55 48 89 E5 48 8B 07 4C 8B 08 4C 8B 40 08 4C 89 C7 4C 29 CF 74 37",
+            hook,
+        )
+        self.assertIn("Do NOT return here", hook)
+        self.assertTrue((vendor / "third_party" / "zydis" / "Zydis.c.xz").is_file())
+
+    def test_upstream_plex_image_may_use_watchtower(self) -> None:
+        errors = check_plex_local_image(
+            "plex",
+            {"image": "lscr.io/linuxserver/plex:latest", "labels": {"com.centurylinklabs.watchtower.enable": "true"}},
+        )
+        self.assertEqual(errors, [])
+
+    def test_config_on_media_pool_is_rejected(self) -> None:
+        errors = check_compose_doc(
+            {
+                "services": {
+                    "radarr": {
+                        "volumes": [
+                            {"source": "/mnt/pool/Isyrr", "target": "/mnt/pool/Isyrr"},
+                            {"source": "/mnt/pool/Isyrr/configs/radarr", "target": "/config"},
+                            {"source": "./scripts/same-disk-import.sh", "target": "/scripts/same-disk-import.sh"},
+                        ]
+                    },
+                    "sonarr": {
+                        "volumes": [
+                            {"source": "/mnt/pool/Isyrr", "target": "/mnt/pool/Isyrr"},
+                            {"source": "/mnt/ssd/appdata/sonarr", "target": "/config"},
+                            {"source": "./scripts/same-disk-import.sh", "target": "/scripts/same-disk-import.sh"},
+                        ]
+                    },
+                }
+            }
+        )
+        self.assertTrue(any("radarr" in e and "media pool" in e for e in errors))
+        self.assertFalse(any("sonarr" in e and "media pool" in e for e in errors))
+
+    def test_appdata_on_ssd_identity_bind_is_ok(self) -> None:
+        errors = check_compose_doc(
+            {
+                "services": {
+                    "radarr": {
+                        "volumes": [
+                            {"source": "/mnt/pool/Isyrr", "target": "/mnt/pool/Isyrr"},
+                            {"source": "/mnt/ssd/Isyrr", "target": "/mnt/ssd/Isyrr"},
+                            {"source": "/mnt/ssd/Isyrr/appdata/radarr", "target": "/config"},
+                            {"source": "./scripts/same-disk-import.sh", "target": "/scripts/same-disk-import.sh"},
+                        ]
+                    },
+                    "sonarr": {
+                        "volumes": [
+                            {"source": "/mnt/pool/Isyrr", "target": "/mnt/pool/Isyrr"},
+                            {"source": "/mnt/ssd/Isyrr", "target": "/mnt/ssd/Isyrr"},
+                            {"source": "/mnt/ssd/Isyrr/appdata/sonarr", "target": "/config"},
+                            {"source": "./scripts/same-disk-import.sh", "target": "/scripts/same-disk-import.sh"},
+                        ]
+                    },
+                }
+            }
+        )
+        self.assertEqual(errors, [])
+
 
 class ArrPayloadTests(unittest.TestCase):
     def test_media_management_enables_hardlinks(self) -> None:
@@ -89,6 +205,41 @@ class ArrPayloadTests(unittest.TestCase):
         out = patch_download_client({"removeCompletedDownloads": True, "id": 4})
         self.assertFalse(out["removeCompletedDownloads"])
         self.assertTrue(out["removeFailedDownloads"])
+
+    def test_quality_profile_language_any_allows_hun_dual_audio(self) -> None:
+        out = with_any_language({"id": 7, "name": "UHD Bluray + WEB", "language": {"id": -2, "name": "Original"}})
+        self.assertEqual(out["language"], {"id": -1, "name": "Any"})
+
+    def test_any_profile_can_allow_web_720p(self) -> None:
+        out = allow_named_qualities(
+            {
+                "name": "Any",
+                "items": [
+                    {"name": "WEB 720p", "allowed": False, "items": []},
+                    {"quality": {"name": "HDTV-720p"}, "allowed": False},
+                    {"name": "WEB 1080p", "allowed": True, "items": []},
+                ],
+            },
+            {"WEB 720p", "HDTV-720p"},
+        )
+        self.assertTrue(out["items"][0]["allowed"])
+        self.assertTrue(out["items"][1]["allowed"])
+        self.assertTrue(out["items"][2]["allowed"])
+
+    def test_indexer_allows_zero_seeders_and_ncore_tv_cats(self) -> None:
+        out = patch_indexer(
+            {
+                "id": 1,
+                "fields": [
+                    {"name": "minimumSeeders", "value": 1},
+                    {"name": "categories", "value": [5040, 5045]},
+                ],
+            }
+        )
+        fields = {f["name"]: f["value"] for f in out["fields"]}
+        self.assertEqual(fields["minimumSeeders"], 0)
+        self.assertIn(5030, fields["categories"])
+        self.assertIn(5040, fields["categories"])
 
     def test_profile_id_and_bulk_ids(self) -> None:
         self.assertEqual(
@@ -132,6 +283,56 @@ class PlexPrefsTests(unittest.TestCase):
         self.assertIn("192.168.0.236:32400", out)
         self.assertNotIn("192.168.0.2:32400", out)
 
+    def test_lan_networks_set_and_replaced(self) -> None:
+        xml = '<Preferences LanNetworksBandwidth="10.0.0.0/8" ManualPortMappingMode="1"/>'
+        out = apply_host_prefs(xml, lan_networks="192.168.0.0/24,100.64.0.0/10")
+        self.assertIn('LanNetworksBandwidth="192.168.0.0/24,100.64.0.0/10"', out)
+        self.assertNotIn("10.0.0.0/8", out)
+        self.assertIn('ManualPortMappingMode="1"', out)
+
+    def test_lan_networks_left_alone_when_unset(self) -> None:
+        xml = '<Preferences LanNetworksBandwidth="10.0.0.0/8"/>'
+        self.assertIn("10.0.0.0/8", apply_host_prefs(xml))
+
+
+def _inspect(name: str, status: str, health: str = "", exit_code: int = 0, restart: str = "unless-stopped") -> Container:
+    row = {
+        "Name": f"/{name}",
+        "State": {"Status": status, "ExitCode": exit_code, **({"Health": {"Status": health}} if health else {})},
+        "HostConfig": {"RestartPolicy": {"Name": restart}},
+    }
+    return Container.from_inspect(row)
+
+
+class MonitorTests(unittest.TestCase):
+    def test_init_container_exiting_cleanly_is_fine(self) -> None:
+        ok = _inspect("plex-init", "exited", restart="no")
+        bad = _inspect("plex-init", "exited", exit_code=1, restart="no")
+        self.assertEqual(container_problems([ok]), {})
+        self.assertIn("failed:plex-init", container_problems([bad]))
+
+    def test_down_and_unhealthy_services_are_problems(self) -> None:
+        problems = container_problems([
+            _inspect("sonarr", "exited", exit_code=137),
+            _inspect("radarr", "running", "unhealthy"),
+            _inspect("plex", "running", "healthy"),
+        ])
+        self.assertEqual(set(problems), {"down:sonarr", "unhealthy:radarr"})
+
+    def test_alerts_fire_once_per_transition(self) -> None:
+        current = {"unhealthy:radarr": "radarr is unhealthy", "full:/x": "/x is 95% full"}
+        new, resolved = diff({"full:/x", "down:sonarr"}, current)
+        self.assertEqual(set(new), {"unhealthy:radarr"})
+        self.assertEqual(resolved, {"down:sonarr"})
+        self.assertEqual(restart_targets(new), ["radarr"])
+        self.assertEqual(diff(set(current), current), ({}, set()))
+
+    def test_disk_and_backup_thresholds(self) -> None:
+        self.assertEqual(set(disk_problems({"/a": 95, "/b": 40, "/c": None})), {"full:/a", "missing:/c"})
+        self.assertEqual(backup_problems(10), {})
+        self.assertIn("backup:stale", backup_problems(48))
+        self.assertIn("backup:never", backup_problems(None))
+
 
 class ProfileNameTests(unittest.TestCase):
     def test_names_match_recyclarr_titles(self) -> None:
@@ -139,6 +340,10 @@ class ProfileNameTests(unittest.TestCase):
         yml = (root / "recyclarr" / "recyclarr.yml").read_text(encoding="utf-8")
         self.assertIn(RADARR_QUALITY_PROFILE, yml)
         self.assertIn(SONARR_QUALITY_PROFILE, yml)
+        self.assertEqual(yml.count("allowed: false"), 2)
+        self.assertNotIn("allowed: true", yml)
+        self.assertIn("WEB 720p", yml)
+        self.assertIn("HDTV-720p", yml)
 
 
 class PlaybackCompatTests(unittest.TestCase):
@@ -296,8 +501,15 @@ class TautulliSimklTests(unittest.TestCase):
         self.assertEqual(fields["on_watched"], "1")
         self.assertEqual(fields["on_play"], "0")
         self.assertEqual(fields["on_watched_body"], SIMKL_WATCHED_JSON)
-        self.assertIn("{themoviedb_id}", fields["on_watched_body"])
         self.assertIn("media.scrobble", fields["on_watched_body"])
+        self.assertIn("<episode>{show_name}</episode>", fields["on_watched_body"])
+        self.assertIn("<movie>{title}</movie>", fields["on_watched_body"])
+        self.assertIn("{themoviedb-<themoviedb_id}", fields["on_watched_body"])
+        self.assertIn("<episode>/{thetvdb-<thetvdb_id}</episode>", fields["on_watched_body"])
+        self.assertNotIn("{themoviedb-{themoviedb_id}", fields["on_watched_body"])
+        json.loads(SIMKL_WATCHED_JSON)
+        json.loads(apply_media_tags(SIMKL_WATCHED_JSON, "episode"))
+        json.loads(apply_media_tags(SIMKL_WATCHED_JSON, "movie"))
 
     def test_find_simkl_notifier(self) -> None:
         rows = [
@@ -320,15 +532,93 @@ class TautulliSimklTests(unittest.TestCase):
                 ]
                 return {}
             if cmd == "get_notifier_config":
-                return {"config": {"hook": store["hook"]}}
+                return {
+                    "config": {"hook": store["hook"], "method": store.get("method", "")},
+                    "actions": {"on_watched": store.get("on_watched", 0)},
+                    "notify_text": {"on_watched": {"body": store.get("body", "")}},
+                }
             if cmd == "set_notifier_config":
                 store["hook"] = extra.get("webhook_hook", "")
+                store["method"] = extra.get("webhook_method", "")
+                store["on_watched"] = extra.get("on_watched", "0")
+                store["body"] = extra.get("on_watched_body", "")
                 store["notifiers"][0]["friendly_name"] = "SIMKL"
                 return {}
             raise AssertionError(cmd)
 
         self.assertEqual(ensure_simkl_webhook(call, "https://api.simkl.com/x?t=1"), "updated")
         self.assertEqual(ensure_simkl_webhook(call, "https://api.simkl.com/x?t=1"), "ok")
+        store["body"] = '{"event":"media.scrobble","guid":"/{themoviedb-{themoviedb_id}/"}'
+        self.assertEqual(ensure_simkl_webhook(call, "https://api.simkl.com/x?t=1"), "updated")
+        self.assertEqual(store["body"], SIMKL_WATCHED_JSON)
+
+    def test_scrobble_from_episode_metadata_uses_show_ids(self) -> None:
+        ids = ids_from_plex_guids(["imdb://tt19231492", "tmdb://196322", "tvdb://393159"])
+        self.assertEqual(ids["themoviedb_id"], "196322")
+        self.assertEqual(ids["imdb_id"], "tt19231492")
+        self.assertEqual(ids["thetvdb_id"], "393159")
+        payload = scrobble_from_metadata(
+            {
+                "media_type": "episode",
+                "title": "Entanglement",
+                "grandparent_title": "Dark Matter",
+                "year": "2024",
+                "parent_media_index": 1,
+                "media_index": 9,
+                "grandparent_guids": ["imdb://tt19231492", "tmdb://196322", "tvdb://393159"],
+                "guids": ["tmdb://5127547"],
+            },
+            username="Local",
+        )
+        self.assertEqual(payload["event"], "media.scrobble")
+        self.assertEqual(payload["Metadata"]["type"], "episode")
+        self.assertEqual(payload["Metadata"]["title"], "Dark Matter")
+        self.assertEqual(
+            payload["Metadata"]["guid"],
+            "/themoviedb-196322/imdb-tt19231492/thetvdb-393159//1/9/",
+        )
+        self.assertNotIn("5127547", payload["Metadata"]["guid"])
+
+    def test_replay_empty_watched_bodies(self) -> None:
+        posted: list = []
+
+        def call(cmd: str, extra=None):
+            extra = extra or {}
+            if cmd == "get_notification_log":
+                return {
+                    "data": [
+                        {
+                            "notify_action": "on_watched",
+                            "body_text": "",
+                            "rating_key": 345,
+                            "user": "Local",
+                        },
+                        {
+                            "notify_action": "on_watched",
+                            "body_text": '{"event":"media.scrobble"}',
+                            "rating_key": 999,
+                            "user": "Local",
+                        },
+                    ]
+                }
+            if cmd == "get_metadata":
+                return {
+                    "media_type": "episode",
+                    "title": "Love",
+                    "grandparent_title": "Babies",
+                    "year": "2020",
+                    "parent_media_index": 1,
+                    "media_index": 1,
+                    "grandparent_guids": ["tmdb://99103", "tvdb://376756"],
+                }
+            raise AssertionError(cmd)
+
+        count = replay_empty_watched_webhooks(
+            call, lambda url, body: posted.append((url, body)), "https://api.simkl.com/x"
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(posted[0][0], "https://api.simkl.com/x")
+        self.assertEqual(posted[0][1]["Metadata"]["title"], "Babies")
 
 
 class ArrPolicyTests(unittest.TestCase):
@@ -351,6 +641,69 @@ class ArrPolicyTests(unittest.TestCase):
         self.assertEqual(first_download_client_id([{"id": 4}]), 4)
         body = plex_server_payload(host="plex", token="tok")
         self.assertEqual(body["implementation"], "PlexServer")
+
+    def test_qbit_seed_prefs_are_unlimited(self) -> None:
+        prefs = seed_unlimited_preferences()
+        self.assertFalse(prefs["queueing_enabled"])
+        self.assertEqual(prefs["max_active_torrents"], -1)
+        self.assertEqual(prefs["max_active_uploads"], -1)
+        self.assertFalse(prefs["max_ratio_enabled"])
+        self.assertFalse(prefs["max_seeding_time_enabled"])
+        self.assertEqual(prefs["max_ratio_act"], 0)
+
+
+class CatchupTests(unittest.TestCase):
+    def test_recent_missing_episodes_respect_lookback(self) -> None:
+        today = date(2026, 9, 6)
+        records = [
+            {"id": 1, "airDate": "2026-09-04"},  # 2d ago
+            {"id": 2, "airDate": "2026-08-20"},  # 17d ago
+            {"id": 3, "airDate": "2026-09-11"},  # future
+            {"id": 4, "airDate": None},
+            {"id": 5, "airDate": "2026-08-24"},  # exactly 13d
+        ]
+        self.assertEqual(
+            recent_missing_episode_ids(records, today=today, lookback_days=14),
+            [1, 5],
+        )
+
+    def test_recent_missing_movies_prefer_digital_then_physical(self) -> None:
+        today = date(2026, 9, 6)
+        records = [
+            {
+                "id": 10,
+                "digitalRelease": "2026-09-01T00:00:00Z",
+                "inCinemas": "2025-01-01T00:00:00Z",
+            },
+            {
+                "id": 11,
+                "digitalRelease": None,
+                "physicalRelease": "2026-09-05T00:00:00Z",
+            },
+            {
+                "id": 12,
+                "digitalRelease": None,
+                "physicalRelease": None,
+                "inCinemas": "2026-08-01T00:00:00Z",
+            },
+            {"id": 13, "digitalRelease": "2025-01-01T00:00:00Z"},
+        ]
+        self.assertEqual(
+            recent_missing_movie_ids(records, today=today, lookback_days=14),
+            [10, 11],
+        )
+
+    def test_search_commands_omit_empty(self) -> None:
+        self.assertIsNone(episode_search_command([]))
+        self.assertIsNone(movies_search_command([]))
+        self.assertEqual(
+            episode_search_command([2587, 3206]),
+            {"name": "EpisodeSearch", "episodeIds": [2587, 3206]},
+        )
+        self.assertEqual(
+            movies_search_command([19]),
+            {"name": "MoviesSearch", "movieIds": [19]},
+        )
 
 
 if __name__ == "__main__":
