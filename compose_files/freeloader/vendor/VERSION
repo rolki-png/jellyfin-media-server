@@ -1,0 +1,4 @@
+# Vendored authrequest/Freeloader (GitHub returns HTTP 451; clone at image-build time is not reliable).
+upstream=https://github.com/authrequest/Freeloader
+commit=6efe3c8be82c0b4a3ac13ebd17a3fe101fc4927c
+note=Local patch in src/hook.cpp: also hook modern per-user feature bit check (gates Marker API).

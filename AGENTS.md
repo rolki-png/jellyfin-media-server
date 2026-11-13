@@ -19,6 +19,17 @@ Work from the repo root. Do not `docker compose down` as a routine step.
 
 Reboots: `media-server.service` runs `docker compose up -d` then [`scripts/boot-ensure-hardlink-policy.sh`](compose_files/scripts/boot-ensure-hardlink-policy.sh) → `homelab-setup.sh --mode=boot` (no queue wipe, no qBittorrent restart, no Recyclarr).
 
+
+## Plex feature unlock (Freeloader)
+
+The `plex` image is a local build, `freeloader-plex:lsio` ([`compose_files/freeloader/`](compose_files/freeloader/Dockerfile)): `lscr.io/linuxserver/plex` plus the [Freeloader](https://github.com/authrequest/Freeloader) feature-unlock `.so`, LD_PRELOADed by a wrapper the s6 svc-plex run file execs (still `s6-setuidgid abc`). The builder builds from [`compose_files/freeloader/vendor/`](compose_files/freeloader/vendor/) (pinned `FREELOADER_COMMIT` plus a local `hook.cpp` patch) and cross-compiles against musl with zig — upstream GitHub returns HTTP 451, so the image build does not `git clone`. At build time PMS’s bundled musl loader must resolve the `.so` preloaded into the real binary or the build fails.
+
+The base image is version-locked to `lscr.io/linuxserver/plex:1.43.2.10687-563d026ea-ls313`, the PMS build the upstream hook signatures were derived from. On 1.43.4 the `.so` loads but PMS crash-loops within a minute (signatures match wrong sites), so `PLEX_BASE_IMAGE` and `FREELOADER_COMMIT` move together: a Plex update means re-deriving signatures for a newer PMS first. Watchtower is disabled on `plex` only, because a pull would replace the patched image with upstream and silently drop the unlock.
+
+The vendored hook forces the global FeatureManager bitset **and** hooks PMS 1.43.2’s per-user feature-bit lookup. Bitset-only unlock leaves Skip Intro/Credits dead: markers stay in the library DB but `/library/metadata/…?includeMarkers=1` omits `Marker` nodes.
+
+Apply or rebuild: `bash compose_files/scripts/build-freeloader-plex.sh`, then `docker compose --env-file .env up -d plex`. The upstream transcode session-limit `dd` patch applies on the pinned build; on any future drift the build warns loudly, writes `/usr/lib/plexmediaserver/TRANSCODE_PATCH_SKIPPED`, and ships without it (the `.so` unlock is the feature).
+
 ## Human-only (agent cannot finish these)
 
 - **Disks / mergerfs** — pool at `COMMON_PATH`’s parent, branches at `SAME_DISK_*` parents, `category.create=epmfs`. Do not bind-mount downloads onto the SSD. See [`compose_files/systemd/README.md`](compose_files/systemd/README.md).
@@ -34,6 +45,7 @@ Reboots: `media-server.service` runs `docker compose up -d` then [`scripts/boot-
 - Split `/movies`+`/downloads` volume binds (breaks **hardlink-safe layout**).
 - Point `PLEX_TRANSCODE_DIR` at mergerfs.
 - Prefer UHD remux/TrueHD/DTS/DoVi or PGS as the subtitle plan.
+- Let watchtower manage `plex` (a pull replaces the patched local image and silently drops the Freeloader unlock).
 - Enable Jellyfin/Prowlarr unless asked (`COMPOSE_PROFILES`).
 - Commit `compose_files/.env`, Recyclarr `secrets.yml`, or API keys.
 
@@ -47,3 +59,4 @@ Reboots: `media-server.service` runs `docker compose up -d` then [`scripts/boot-
 | Sidecar SRT | `stack_policy.bazarr` |
 | SIMKL watched | `stack_policy.tautulli` |
 | Plex transcode temp + advertise | `stack_policy.plex_prefs`, `plex-init.sh` |
+| Plex feature unlock (Freeloader .so) | `compose_files/freeloader/`, `build-freeloader-plex.sh` |
