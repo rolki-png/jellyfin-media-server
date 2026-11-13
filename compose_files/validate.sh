@@ -119,16 +119,17 @@ if [[ "${CI_MODE}" == "false" ]]; then
     fail "Missing ${unit_src}"
   fi
   if [[ ! -f "${unit_dst}" ]]; then
-    fail "media-server.service not installed at ${unit_dst}. See compose_files/systemd/README.md"
-  fi
-  if ! grep -q 'boot-ensure-hardlink-policy.sh' "${unit_dst}"; then
-    fail "${unit_dst} is outdated (missing boot-ensure-hardlink-policy.sh). Reinstall from compose_files/systemd/"
-  fi
-  if ! grep -q 'RequiresMountsFor=' "${unit_dst}"; then
-    fail "${unit_dst} is outdated (missing RequiresMountsFor). Reinstall from compose_files/systemd/"
-  fi
-  if ! systemctl is-enabled media-server >/dev/null 2>&1; then
-    fail "media-server.service is not enabled (will not start on boot)"
+    warn "media-server.service is not installed yet at ${unit_dst}. Run: sudo bash compose_files/systemd/install-media-server-unit.sh"
+  else
+    if ! grep -q 'boot-ensure-hardlink-policy.sh' "${unit_dst}"; then
+      fail "${unit_dst} is outdated (missing boot-ensure-hardlink-policy.sh). Reinstall from compose_files/systemd/"
+    fi
+    if ! grep -q 'RequiresMountsFor=' "${unit_dst}"; then
+      fail "${unit_dst} is outdated (missing RequiresMountsFor). Reinstall from compose_files/systemd/"
+    fi
+    if ! systemctl is-enabled media-server >/dev/null 2>&1; then
+      fail "media-server.service is not enabled (will not start on boot)"
+    fi
   fi
   if findmnt -n "${COMMON_PATH}/qbittorrent/downloads" >/dev/null 2>&1; then
     fail "${COMMON_PATH}/qbittorrent/downloads is a separate mount; keep the SSD bind commented in /etc/fstab"
