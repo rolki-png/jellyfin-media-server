@@ -126,11 +126,11 @@ class PlexPrefsTests(unittest.TestCase):
         self.assertIn('TranscoderTempDirectory="/transcode"', out)
 
     def test_replaces_existing_transcoder_and_advertise(self) -> None:
-        xml = '<Preferences TranscoderTempDirectory="/config/Cache" customConnections="http://192.168.0.2:32400"/>'
-        out = apply_host_prefs(xml, advertise_url="http://192.168.0.236:32400")
+        xml = '<Preferences TranscoderTempDirectory="/config/Cache" customConnections="http://192.0.2.2:32400"/>'
+        out = apply_host_prefs(xml, advertise_url="http://192.0.2.236:32400")
         self.assertIn('TranscoderTempDirectory="/transcode"', out)
-        self.assertIn("192.168.0.236:32400", out)
-        self.assertNotIn("192.168.0.2:32400", out)
+        self.assertIn("192.0.2.236:32400", out)
+        self.assertNotIn("192.0.2.2:32400", out)
 
 
 class ProfileNameTests(unittest.TestCase):

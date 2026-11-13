@@ -14,7 +14,7 @@ Work from the repo root. Do not `docker compose down` as a routine step.
 4. `bash compose_files/validate.sh` (use `--ci` only in GitHub Actions; live hosts need `.env` + mounts).
 5. `cd compose_files && docker compose --env-file .env up -d`
 6. `bash compose_files/scripts/homelab-setup.sh --mode=all` — waits for *arr `config.xml`, writes Recyclarr/Unpackerr keys, Recyclarr sync (Direct Play scores), Bazarr English SRT policy, Tautulli→Plex, SIMKL webhook if the URL is set.
-7. Install boot persistence: `sudo bash compose_files/systemd/install-media-server-unit.sh` then `sudo systemctl enable --now media-server.service`. That regenerates the unit from this clone path and `.env` mounts (the checked-in `.service` is this host’s copy).
+7. Install boot persistence: `sudo bash compose_files/systemd/install-media-server-unit.sh` then `sudo systemctl enable --now media-server.service`. That regenerates the unit from this clone path and `.env` mounts (it also leaves an untracked, git-ignored copy beside the template).
 8. Verify: `bash compose_files/scripts/health-check.sh` and `PYTHONPATH=compose_files/scripts python3 -m unittest test_stack_policy -v`.
 
 Reboots: `media-server.service` runs `docker compose up -d` then [`scripts/boot-ensure-hardlink-policy.sh`](compose_files/scripts/boot-ensure-hardlink-policy.sh) → `homelab-setup.sh --mode=boot` (no queue wipe, no qBittorrent restart, no Recyclarr).

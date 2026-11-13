@@ -19,3 +19,4 @@ compose_files/recyclarr/state/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+compose_files/systemd/media-server.service

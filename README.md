@@ -64,7 +64,7 @@ Edit `compose_files/.env`:
 - `TZ` — IANA timezone
 - `PUID` / `PGID` — `id -u` / `id -g` of the host user
 - `SAME_DISK_SSD_ROOT` / `SAME_DISK_HDD_ROOT` — mergerfs branch roots
-- `PLEX_ADVERTISE_IP` — LAN URL clients should use, e.g. `http://192.168.0.236:32400`
+- `PLEX_ADVERTISE_IP` — LAN URL clients should use, e.g. `http://<lan-ip>:32400`
 - `PLEX_CLAIM` — one-time token from [plex.tv/claim](https://plex.tv/claim) (expires in a few minutes)
 - `SIMKL_PLEX_WEBHOOK_URL` — quoted unique URL from [simkl.com/apps/plex](https://simkl.com/apps/plex) (optional until SIMKL is needed)
 
