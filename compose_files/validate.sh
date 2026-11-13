@@ -113,7 +113,7 @@ fi
 
 # Host boot unit must re-apply policy and wait for mergerfs (skip in CI).
 if [[ "${CI_MODE}" == "false" ]]; then
-  unit_src="${SCRIPT_DIR}/systemd/media-server.service"
+  unit_src="${SCRIPT_DIR}/systemd/media-server.service.in"
   unit_dst="/etc/systemd/system/media-server.service"
   if [[ ! -f "${unit_src}" ]]; then
     fail "Missing ${unit_src}"

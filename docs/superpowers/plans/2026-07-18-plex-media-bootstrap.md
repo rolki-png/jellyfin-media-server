@@ -18,7 +18,7 @@
 - **Images (pin in modules):** `lscr.io/linuxserver/{plex,sonarr,radarr,prowlarr,qbittorrent,jackett,bazarr,tautulli}:latest`, `ghcr.io/seerr-team/seerr:latest`, `ghcr.io/flaresolverr/flaresolverr:latest`, `ghcr.io/unpackerr/unpackerr:latest`, `ghcr.io/recyclarr/recyclarr:8`, `qmcgaw/gluetun:latest`.
 - **Paths:** single host root `${DATA_ROOT}` mounted as `/data` in containers; `media/{movies,tv}`, `torrents/{movies,tv}`, `configs/<app>`.
 - **Networks:** `media` + `download`; *arr join both; qBit (± Gluetun) on `download`.
-- **New repo location:** `/home/rolki/projects/plex-bootstrap` (git init, separate from All-jellyfin-media-server).
+- **New repo location:** `~/projects/plex-bootstrap` (git init, separate from All-jellyfin-media-server).
 - **Package name:** `plex-bootstrap`; bin: `plex-bootstrap`.
 - **Recyclarr:** scheduled one-shot container (`recyclarr sync` on cron via compose), not a long-lived daemon API.
 
@@ -96,12 +96,12 @@ plex-bootstrap/
 ### Task 1: Scaffold greenfield repo + first public type
 
 **Files:**
-- Create: `/home/rolki/projects/plex-bootstrap/package.json`
-- Create: `/home/rolki/projects/plex-bootstrap/tsconfig.json`
-- Create: `/home/rolki/projects/plex-bootstrap/vitest.config.ts`
-- Create: `/home/rolki/projects/plex-bootstrap/.gitignore`
-- Create: `/home/rolki/projects/plex-bootstrap/src/types.ts`
-- Test: `/home/rolki/projects/plex-bootstrap/tests/types-smoke.test.ts`
+- Create: `~/projects/plex-bootstrap/package.json`
+- Create: `~/projects/plex-bootstrap/tsconfig.json`
+- Create: `~/projects/plex-bootstrap/vitest.config.ts`
+- Create: `~/projects/plex-bootstrap/.gitignore`
+- Create: `~/projects/plex-bootstrap/src/types.ts`
+- Test: `~/projects/plex-bootstrap/tests/types-smoke.test.ts`
 
 **Interfaces:**
 - Produces: `StackConfig`, `CoreServices`, `OptionalServices`, `VpnConfig` types used by all later tasks.
@@ -109,8 +109,8 @@ plex-bootstrap/
 - [ ] **Step 1: Create repo and package scaffolding**
 
 ```bash
-mkdir -p /home/rolki/projects/plex-bootstrap
-cd /home/rolki/projects/plex-bootstrap
+mkdir -p ~/projects/plex-bootstrap
+cd ~/projects/plex-bootstrap
 git init
 npm init -y
 npm pkg set name=plex-bootstrap version=0.1.0 type=module
@@ -195,7 +195,7 @@ describe("StackConfig", () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `cd /home/rolki/projects/plex-bootstrap && npm test -- tests/types-smoke.test.ts`
+Run: `cd ~/projects/plex-bootstrap && npm test -- tests/types-smoke.test.ts`
 Expected: FAIL (cannot find module `../src/types.ts`)
 
 - [ ] **Step 4: Write minimal `src/types.ts`**
@@ -273,7 +273,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /home/rolki/projects/plex-bootstrap
+cd ~/projects/plex-bootstrap
 git add package.json package-lock.json tsconfig.json vitest.config.ts .gitignore src/types.ts tests/types-smoke.test.ts
 git commit -m "chore: scaffold plex-bootstrap with StackConfig types"
 ```

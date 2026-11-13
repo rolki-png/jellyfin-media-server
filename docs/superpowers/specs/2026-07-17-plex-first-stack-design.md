@@ -49,8 +49,8 @@ Ran with **no active Plex sessions**.
 
 ### Xbox LAN path
 
-- Confirmed `ADVERTISE_IP` / `customConnections` = `http://192.168.0.236:32400` (updated 2026-08-15; host DHCP moved off `.2`).
-- Kept `allowedNetworks` covering `192.168.0.0/24` and Docker ranges (dropped ULA `fd00::/8` after disabling IPv6).
+- Confirmed `ADVERTISE_IP` / `customConnections` = `http://<lan-ip>:32400` (updated 2026-08-15; host DHCP moved off `.2`).
+- Kept `allowedNetworks` covering `<lan-subnet>` and Docker ranges (dropped ULA `fd00::/8` after disabling IPv6).
 - `RelayEnabled=0`, `GdmEnabled=1`.
 - Set `EnableIPv6=0` so living-room clients prefer IPv4 LAN instead of plex.tv-over-IPv6 (`location=wan` false positive).
 
@@ -77,7 +77,7 @@ Ran with **no active Plex sessions**.
 
 - Choose one of Seerr vs Jellyseerr. *(Resolved 2026-08-15: Seerr only.)*
 - Decide whether Prowlarr should ever replace Jackett (only after explicit Torznab cutover).
-- If Xbox still reports `wan`, set a manual server connection on the Xbox to `http://192.168.0.236:32400`.
+- If Xbox still reports `wan`, set a manual server connection on the Xbox to `http://<lan-ip>:32400`.
 
 ## Non-goals
 
