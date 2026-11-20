@@ -1,0 +1,182 @@
+#!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Build plexmediaserver_crack.so for Plex Media Server on Linux.
+#
+# IMPORTANT: Plex ships and runs against its OWN bundled musl libc + libgcompat
+# (see /usr/lib/plexmediaserver/lib/{libc.so,ld-musl-x86_64.so.1,libgcompat.so.0}).
+# A glibc-built .so will NOT load into Plex -- the dynamic loader fails to
+# relocate glibc-only symbols (__isoc23_strtol, arc4random, *_chk, _dl_find_object)
+# and Plex exits 127. We therefore cross-compile against musl with zig, which
+# bundles musl for clean cross-compilation.
+#
+# IMPORTANT: The .so must NOT statically link libc++ or libc++abi. Plex's
+# runtime uses GCC's libstdc++ for C++ exception handling. If our .so defines
+# __cxa_throw/__cxa_begin_catch/__gxx_personality_v0 (from libc++abi), they
+# override libstdc++'s versions via LD_PRELOAD, breaking boost::filesystem
+# exception handling and crashing Plex. We use -nostdlib++ and strip all C++
+# runtime usage from the source to avoid this entirely.
+#
+# Injection is done with LD_PRELOAD (NOT patchelf): patchelf rewrites the 22MB
+# BIND_NOW/PIE binary's program headers in a way musl's loader cannot tolerate,
+# which corrupts the executable (instant SIGSEGV on start). See install notes
+# printed at the end.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# Parse command-line arguments.
+ARM64=false
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-a|--arm64) ARM64=true; shift ;;
+		-h|--help)
+			echo "Usage: $0 [-a|--arm64]"
+			echo "  -a, --arm64  Build for aarch64-linux-musl (ARM64, e.g. UDM Pro)"
+			echo "  (default: x86_64-linux-musl)"
+			exit 0
+			;;
+		*) echo "Unknown option: $1"; exit 1 ;;
+	esac
+done
+
+ZIG_VERSION="0.13.0"
+if [ "$ARM64" = true ]; then
+	TARGET="aarch64-linux-musl"
+	OUT="build/plexmediaserver_crack_arm64.so"
+	echo "=== Building for ARM64 (aarch64-linux-musl) ==="
+else
+	TARGET="x86_64-linux-musl"
+	OUT="build/plexmediaserver_crack.so"
+	echo "=== Building for x86_64 (x86_64-linux-musl) ==="
+fi
+
+echo "=== Plex Media Server Crack - Linux (musl) Build ==="
+
+# Resolve a zig toolchain: $ZIG override, then PATH, then a local download.
+if [ -n "${ZIG:-}" ] && [ -x "${ZIG}" ]; then
+    :
+elif command -v zig &> /dev/null; then
+    ZIG="$(command -v zig)"
+else
+    ZIG_DIR="toolchain/zig-linux-x86_64-${ZIG_VERSION}"
+    if [ ! -x "${ZIG_DIR}/zig" ]; then
+        echo "zig not found; downloading ${ZIG_VERSION}..."
+        mkdir -p toolchain
+        curl -fL --connect-timeout 20 \
+            -o "toolchain/zig.tar.xz" \
+            "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+        tar -C toolchain -xf "toolchain/zig.tar.xz"
+    fi
+    ZIG="${ZIG_DIR}/zig"
+fi
+echo "Using zig: ${ZIG} ($("${ZIG}" version))"
+
+# Required sources.
+REQUIRED_FILES="src/hook.cpp src/hook.hpp src/main.cpp src/webhook_handler.hpp src/webhook_handler.cpp src/traffic_logger.hpp src/traffic_logger.cpp"
+if [ "$ARM64" = false ]; then
+    REQUIRED_FILES="$REQUIRED_FILES third_party/zydis/Zydis.c third_party/zydis/Zydis.h"
+fi
+for f in $REQUIRED_FILES; do
+    [ -f "$f" ] || { echo "ERROR: missing $f"; exit 1; }
+done
+
+# ARM64 doesn't use Zydis (fixed 4-byte instructions, no decoding needed).
+if [ "$ARM64" = true ]; then
+    CFLAGS=(-target "${TARGET}" -O2 -fPIC -I src)
+    CXXFLAGS=(-target "${TARGET}" -std=c++20 -O2 -fPIC -fno-exceptions -fno-rtti -nostdlib++ -I src)
+else
+    CFLAGS=(-target "${TARGET}" -O2 -fPIC -I src -I third_party/zydis)
+    CXXFLAGS=(-target "${TARGET}" -std=c++20 -O2 -fPIC -fno-exceptions -fno-rtti -nostdlib++ -I src -I third_party/zydis)
+fi
+
+mkdir -p build
+if [ "$ARM64" = false ]; then
+    echo "=== compiling Zydis.c (C) ==="
+    "${ZIG}" cc  "${CFLAGS[@]}"   -c third_party/zydis/Zydis.c -o build/Zydis.o
+fi
+echo "=== compiling hook.cpp (C++) ==="
+"${ZIG}" c++ "${CXXFLAGS[@]}" -c src/hook.cpp -o build/hook.o
+echo "=== compiling main.cpp (C++) ==="
+"${ZIG}" c++ "${CXXFLAGS[@]}" -c src/main.cpp -o build/main.o
+echo "=== compiling webhook_handler.cpp (C++) ==="
+"${ZIG}" c++ "${CXXFLAGS[@]}" -c src/webhook_handler.cpp -o build/webhook_handler.o
+echo "=== linking ${OUT} ==="
+if [ "$ARM64" = true ]; then
+    "${ZIG}" c++ -target "${TARGET}" -nostdlib++ -shared -o "${OUT}" build/main.o build/hook.o build/webhook_handler.o
+else
+    "${ZIG}" c++ -target "${TARGET}" -nostdlib++ -shared -o "${OUT}" build/main.o build/hook.o build/webhook_handler.o build/Zydis.o
+fi
+rm -f build/Zydis.o build/hook.o build/main.o build/webhook_handler.o
+
+# ── Traffic logger (socket-hooking LD_PRELOAD library) ──────────────────────
+TRF_OUT="build/plexmediaserver_traffic_logger.so"
+echo "=== compiling traffic_logger.cpp (C++) ==="
+"${ZIG}" c++ "${CXXFLAGS[@]}" -c src/traffic_logger.cpp -o build/traffic_logger.o
+echo "=== linking ${TRF_OUT} ==="
+"${ZIG}" c++ -target "${TARGET}" -nostdlib++ -shared -o "${TRF_OUT}" build/traffic_logger.o
+rm -f build/traffic_logger.o
+echo "=== $("${ZIG}" size "${TRF_OUT}" 2>/dev/null || stat -c %s "${TRF_OUT}") ==="
+
+for lib in "${OUT}" "${TRF_OUT}"; do
+    if [ -f "${lib}" ]; then
+        echo ""
+        echo "=== ABI sanity check: ${lib} ==="
+        if readelf --dyn-syms "${lib}" | grep -E "UND .*(__isoc23_|_chk$|arc4random|_dl_find_object)" ; then
+            echo "ERROR: glibc-only symbols present in ${lib} -- this will not load into Plex."
+            exit 1
+        fi
+        echo "OK: only musl libc symbols are referenced."
+        echo "NEEDED: $(readelf -d "${lib}" | awk '/NEEDED/{print $5}' | tr -d '[]' | tr '\n' ' ')"
+        echo "=== $(stat -c %s "${lib}") bytes ==="
+    fi
+done
+
+if [ "$ARM64" = true ]; then
+cat <<'EOF'
+
+Install (ARM64 / UDM Pro -- via SSH):
+
+1. Copy the artifacts to the UDM Pro:
+      scp build/plexmediaserver_crack_arm64.so \
+        root@udmpro:/usr/lib/plexmediaserver/lib/plexmediaserver_crack.so
+      scp scripts/plex-crack-wrapper.sh \
+        root@udmpro:/usr/local/bin/plex-crack-wrapper.sh
+
+2. SSH into UDM Pro and set permissions:
+      ssh root@udmpro
+      chmod 755 /usr/local/bin/plex-crack-wrapper.sh
+      mkdir -p /etc/systemd/system/plexmediaserver.service.d
+      printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/plex-crack-wrapper.sh\n' \
+        > /etc/systemd/system/plexmediaserver.service.d/override.conf
+      systemctl daemon-reload
+      systemctl restart plexmediaserver
+
+EOF
+else
+cat <<'EOF'
+
+Install (proper method -- LD_PRELOAD, no patchelf):
+
+1. Copy the artifacts to the Plex host:
+      build/plexmediaserver_crack.so  -> /usr/lib/plexmediaserver/lib/plexmediaserver_crack.so
+      scripts/plex-crack-wrapper.sh   -> /usr/local/bin/   (chmod 755)
+
+2. Add a systemd drop-in that swaps ExecStart for the wrapper (the wrapper sets
+   LD_PRELOAD *after* /bin/sh starts, so only the musl Plex process is preloaded
+   and glibc helper children are unaffected):
+
+      mkdir -p /etc/systemd/system/plexmediaserver.service.d
+      printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/plex-crack-wrapper.sh\n' \
+        > /etc/systemd/system/plexmediaserver.service.d/override.conf
+
+3. Apply:
+      systemctl daemon-reload
+      systemctl restart plexmediaserver
+
+To uninstall: remove the drop-in (and rm the .so), then daemon-reload + restart.
+Do NOT use `patchelf --add-needed` on the Plex binary -- it corrupts it under
+musl's loader. If a previous attempt did, restore with:
+      apt-get install --reinstall plexmediaserver   # or dpkg -i the matching .deb
+EOF
+fi
