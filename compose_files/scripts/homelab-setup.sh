@@ -342,6 +342,19 @@ for row in json.load(sys.stdin):
 '
 }
 
+# Import lists search on add: a list left on Any grabs remuxes the profile editor
+# would only fix after the download (The Brutalist via Simkl Watchlist).
+pin_import_list_profiles() {
+  local port=$1 key=$2 name=$3 profile=$4 row
+  arr_get "${port}" "${key}" "/api/v3/importlist" | policy import-list-payloads "${profile}" \
+    | python3 -c 'import json,sys; [print(json.dumps(r)) for r in json.load(sys.stdin)]' \
+    | while IFS= read -r row; do
+        printf '%s' "${row}" | arr_put "${port}" "${key}" \
+          "/api/v3/importlist/$(printf '%s' "${row}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+        log "Pinned ${name} import list $(printf '%s' "${row}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])') to profile ${profile}"
+      done
+}
+
 set_default_quality_profiles() {
   log "Applying UHD quality profiles to existing media"
   local radarr_name sonarr_name radarr_profile sonarr_profile tmp
@@ -377,6 +390,9 @@ set_default_quality_profiles() {
       log "Sonarr series list unavailable — skip profile editor"
     fi
   fi
+
+  [[ -n "${radarr_profile:-}" ]] && pin_import_list_profiles 7878 "${RADARR_KEY}" Radarr "${radarr_profile}"
+  [[ -n "${sonarr_profile:-}" ]] && pin_import_list_profiles 8989 "${SONARR_KEY}" Sonarr "${sonarr_profile}"
 
   rm -rf "${tmp}"
 }
