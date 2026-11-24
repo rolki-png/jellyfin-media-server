@@ -1,0 +1,7 @@
+Broken-variant proof for PublicTreeLocksTests (2026-11-24):
+
+1. Appended a live RFC1918 LAN advertise URL to README.md
+2. test_no_host_home_or_live_lan_in_tracked_text FAILED naming README.md
+3. Replaced quality.yml push branch Main with lowercase main → Main filter test FAILED
+4. Restored both; suite green (55 tests, 1 skip for local freeloader).
+

@@ -21,6 +21,7 @@ set +a
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"
 SSD="${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}"
 HDD="${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}"
+APPDATA_PATH="${APPDATA_PATH:-${SSD}/appdata}"
 
 parent_of() {
   local p=$1
@@ -29,7 +30,7 @@ parent_of() {
 }
 
 unique_mounts=""
-for p in "$(parent_of "${COMMON_PATH}")" "$(parent_of "${SSD}")" "$(parent_of "${HDD}")"; do
+for p in "$(parent_of "${COMMON_PATH}")" "$(parent_of "${SSD}")" "$(parent_of "${HDD}")" "$(parent_of "${APPDATA_PATH}")"; do
   case " ${unique_mounts} " in
     *" ${p} "*) ;;
     *) unique_mounts="${unique_mounts:+${unique_mounts} }${p}" ;;
@@ -37,19 +38,18 @@ for p in "$(parent_of "${COMMON_PATH}")" "$(parent_of "${SSD}")" "$(parent_of "$
 done
 mounts="${unique_mounts}"
 
-unit="$(sed \
-  -e "s|@@COMPOSE_DIR@@|${COMPOSE_DIR}|g" \
-  -e "s|@@MOUNTS@@|${mounts}|g" \
-  "${TEMPLATE}")"
+render() {
+  sed -e "s|@@COMPOSE_DIR@@|${COMPOSE_DIR}|g" -e "s|@@MOUNTS@@|${mounts}|g" "$1"
+}
 
 if [[ "${DEST}" == "-" ]]; then
-  printf '%s\n' "${unit}"
+  render "${TEMPLATE}"
   exit 0
 fi
 
-printf '%s\n' "${unit}" > "${DEST}"
+render "${TEMPLATE}" > "${DEST}"
 if [[ "${DEST}" != "${SCRIPT_DIR}/media-server.service" ]]; then
-  printf '%s\n' "${unit}" > "${SCRIPT_DIR}/media-server.service"
+  render "${TEMPLATE}" > "${SCRIPT_DIR}/media-server.service"
 fi
 
 if [[ "${DEST}" == /etc/systemd/system/* ]]; then
@@ -57,7 +57,13 @@ if [[ "${DEST}" == /etc/systemd/system/* ]]; then
     echo "Wrote ${DEST}; run as root to daemon-reload, or: sudo systemctl daemon-reload" >&2
     exit 1
   fi
+  # Backup + health-alert timers ride along with the main unit.
+  for tpl in "${SCRIPT_DIR}"/media-backup.*.in "${SCRIPT_DIR}"/media-monitor.*.in; do
+    name="$(basename -- "${tpl}" .in)"
+    render "${tpl}" > "/etc/systemd/system/${name}"
+  done
   systemctl daemon-reload
+  systemctl enable --now media-backup.timer media-monitor.timer
 fi
 
 echo "Installed ${DEST} (WorkingDirectory=${COMPOSE_DIR} RequiresMountsFor=${mounts})"

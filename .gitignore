@@ -20,3 +20,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 compose_files/systemd/media-server.service
+
+# Plex feature unlock: kept local (private backup repo), never in this public repo
+compose_files/freeloader/
+compose_files/scripts/build-freeloader-plex.sh

@@ -3,6 +3,7 @@
 # (UHD Bluray + WEB / WEB-2160p) — homelab-setup bulk-assign reads those names.
 # Playback target: Plex on Xbox Series X → Samsung UE65U8092 (display only, LAN).
 # Prefer 4K HDR10/HDR10+ WEB that Xbox can Direct Play (HEVC + AAC/DD/DD+).
+# No quality upgrades after the first grab — disk cannot hold 720p + 1080p + 4K.
 # Hard-reject TrueHD / DTS-HD: not in Plex Xbox MKV Direct Play, and this TV
 # does not decode TrueHD or DTS-HD on HDMI (DD+ / DD+ Atmos only).
 # min_format_score -9999: untagged WEB still grabs; -10000 rejects do not.
@@ -31,8 +32,7 @@ radarr:
             - DTS-HD HRA
             - DTS
         upgrade:
-          allowed: true
-          until_quality: Bluray-2160p
+          allowed: false
         min_format_score: -9999
         qualities:
           - name: WEB 2160p
@@ -104,8 +104,7 @@ sonarr:
             - DTS-HD HRA
             - DTS
         upgrade:
-          allowed: true
-          until_quality: Bluray-2160p
+          allowed: false
         min_format_score: -9999
         qualities:
           - name: WEB 2160p

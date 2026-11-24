@@ -9,23 +9,26 @@ from __future__ import annotations
 
 import configparser
 import io
+import json
 import re
-from typing import Mapping
+from typing import Callable, Mapping
 
 WEBHOOK_AGENT_ID = 25
 SIMKL_NOTIFIER_NAME = "SIMKL"
 SIMKL_WEBHOOK_PAGE = "https://simkl.com/apps/plex"
 
-# Official SIMKL Tautulli JSON (Watched trigger). <<movie>> / <<episode>> are
-# Tautulli conditionals. guid is a synthetic Plex-style ID string SIMKL parses.
+# Exact Watched JSON from https://simkl.com/apps/plex (Tautulli path).
+# `<episode>` / `<movie>` are Tautulli media tags. `{themoviedb-<themoviedb_id}`
+# is Tautulli's prefix form — nested `{themoviedb-{themoviedb_id}` makes it
+# drop the body and POST an empty fallback SIMKL ignores.
 SIMKL_WATCHED_JSON = (
-    '{"event":"media.scrobble","user":"{username}",'
-    '"Metadata":{"title":"<<episode>>{show_name}<</episode>><<movie>>{title}<</movie>>",'
-    '"type":"{media_type}","parentIndex":"{season_num}","index":"{episode_num}",'
-    '"year":"{year}",'
-    '"guid":"/{themoviedb-{themoviedb_id}/{imdb-{imdb_id}'
-    '<<episode>>/{thetvdb-{thetvdb_id}<</episode>>/{anidb-{anidb_id}/'
-    '{season_num}/{episode_num}/"}}'
+    '{"event":"media.scrobble","user":"{username}", '
+    '"Metadata":{ "title": "<episode>{show_name}</episode><movie>{title}</movie>",'
+    '"type":"{media_type}","parentIndex": "{season_num}", '
+    '"index": "{episode_num}", "year": "{year}",'
+    '"guid":"/{themoviedb-<themoviedb_id}/{imdb-<imdb_id}'
+    "<episode>/{thetvdb-<thetvdb_id}</episode>/{anidb-<anidb_id}"
+    '/{season_num}/{episode_num}/"} }'
 )
 
 NOTIFY_ACTIONS = (
@@ -161,6 +164,200 @@ def webhook_url_from_config(config: Mapping[str, object]) -> str:
     return ""
 
 
+def watched_body_from_config(config: Mapping[str, object]) -> str:
+    text = config.get("notify_text")
+    if not isinstance(text, Mapping):
+        return ""
+    watched = text.get("on_watched")
+    if not isinstance(watched, Mapping):
+        return ""
+    return str(watched.get("body") or "")
+
+
+def simkl_notifier_is_current(config: object, webhook: str) -> bool:
+    if not isinstance(config, Mapping):
+        return False
+    inner = config.get("config")
+    method = ""
+    if isinstance(inner, Mapping):
+        method = str(inner.get("method") or "").upper()
+    actions = config.get("actions")
+    watched = None
+    if isinstance(actions, Mapping):
+        watched = actions.get("on_watched")
+    return (
+        webhook_url_from_config(config) == webhook.strip()
+        and method == "POST"
+        and watched in (1, "1", True)
+        and watched_body_from_config(config) == SIMKL_WATCHED_JSON
+    )
+
+
+_MEDIA_TAG_BLOCKS = (
+    r"<movie>.*?</movie>|<show>.*?</show>|<season>.*?</season>|"
+    r"<episode>.*?</episode>|<artist>.*?</artist>|<album>.*?</album>|<track>.*?</track>"
+)
+_KEEP_MEDIA_BLOCK = {
+    "movie": "<movie>.*?</movie>",
+    "show": "<show>.*?</show>",
+    "season": "<season>.*?</season>",
+    "episode": "<episode>.*?</episode>",
+    "artist": "<artist>.*?</artist>",
+    "album": "<album>.*?</album>",
+    "track": "<track>.*?</track>",
+}
+_TAUTULLI_FIELD = re.compile(r"\{([^{}]+)\}")
+
+
+def apply_media_tags(text: str, media_type: str) -> str:
+    """Same keep/drop rules Tautulli uses before formatting webhook JSON."""
+    keep = _KEEP_MEDIA_BLOCK.get(media_type)
+    pattern = (
+        _MEDIA_TAG_BLOCKS.replace(keep, f"<{media_type}>|</{media_type}>")
+        if keep
+        else _MEDIA_TAG_BLOCKS
+    )
+    return re.sub(pattern, "", text, flags=re.IGNORECASE | re.DOTALL)
+
+
+def format_tautulli_fields(text: str, params: Mapping[str, object]) -> str:
+    def repl(match: re.Match[str]) -> str:
+        spec = match.group(1)
+        prefix = suffix = ""
+        name = spec
+        if "<" in spec:
+            prefix, rest = spec.split("<", 1)
+            if ">" in rest:
+                name, suffix = rest.split(">", 1)
+            else:
+                name = rest
+        value = str(params.get(name, "") or "")
+        if not value:
+            return ""
+        return f"{prefix}{value}{suffix}"
+
+    return _TAUTULLI_FIELD.sub(repl, text)
+
+
+def render_simkl_watched_body(params: Mapping[str, object]) -> dict[str, object]:
+    media_type = str(params.get("media_type") or "")
+    data = json.loads(apply_media_tags(SIMKL_WATCHED_JSON, media_type))
+
+    def walk(node: object) -> object:
+        if isinstance(node, dict):
+            return {key: walk(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [walk(value) for value in node]
+        if isinstance(node, str):
+            return format_tautulli_fields(node, params)
+        return node
+
+    rendered = walk(data)
+    if not isinstance(rendered, dict):
+        raise TypeError("SIMKL watched JSON must be an object")
+    return rendered
+
+
+def ids_from_plex_guids(guids: object) -> dict[str, str]:
+    out = {"themoviedb_id": "", "imdb_id": "", "thetvdb_id": "", "anidb_id": ""}
+    rows = guids if isinstance(guids, list) else []
+    for raw in rows:
+        value = str(raw)
+        if "://" not in value:
+            continue
+        scheme, ident = value.split("://", 1)
+        ident = ident.strip()
+        if scheme == "tmdb":
+            out["themoviedb_id"] = ident
+        elif scheme == "imdb":
+            out["imdb_id"] = ident
+        elif scheme == "tvdb":
+            out["thetvdb_id"] = ident
+        elif scheme == "anidb":
+            out["anidb_id"] = ident
+    return out
+
+
+def simkl_scrobble_payload(
+    *,
+    username: str,
+    show_name: str,
+    title: str,
+    media_type: str,
+    season_num: str,
+    episode_num: str,
+    year: str,
+    themoviedb_id: str = "",
+    imdb_id: str = "",
+    thetvdb_id: str = "",
+    anidb_id: str = "",
+) -> dict[str, object]:
+    return render_simkl_watched_body(
+        {
+            "username": username,
+            "show_name": show_name,
+            "title": title,
+            "media_type": media_type,
+            "season_num": season_num,
+            "episode_num": episode_num,
+            "year": year,
+            "themoviedb_id": themoviedb_id,
+            "imdb_id": imdb_id,
+            "thetvdb_id": thetvdb_id,
+            "anidb_id": anidb_id,
+        }
+    )
+
+
+def scrobble_from_metadata(meta: Mapping[str, object], *, username: str) -> dict[str, object]:
+    media_type = str(meta.get("media_type") or "")
+    if media_type == "episode":
+        ids = ids_from_plex_guids(meta.get("grandparent_guids") or meta.get("guids"))
+        show_name = str(meta.get("grandparent_title") or "")
+        season = str(meta.get("parent_media_index") or meta.get("parent_index") or "")
+        episode = str(meta.get("media_index") or meta.get("index") or "")
+    else:
+        ids = ids_from_plex_guids(meta.get("guids"))
+        show_name = ""
+        season = ""
+        episode = ""
+    return simkl_scrobble_payload(
+        username=username,
+        show_name=show_name,
+        title=str(meta.get("title") or ""),
+        media_type=media_type,
+        season_num=season,
+        episode_num=episode,
+        year=str(meta.get("year") or ""),
+        **ids,
+    )
+
+
+def replay_empty_watched_webhooks(call, post: Callable[[str, dict], object], webhook: str) -> int:
+    """Re-POST watched events Tautulli sent with an empty body (failed template)."""
+    logs = call("get_notification_log", {"length": "1000"}) or {}
+    rows = logs.get("data") if isinstance(logs, Mapping) else logs
+    sent = 0
+    seen: set[object] = set()
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, Mapping):
+            continue
+        if row.get("notify_action") != "on_watched":
+            continue
+        if str(row.get("body_text") or "").strip():
+            continue
+        rating_key = row.get("rating_key")
+        if rating_key in seen:
+            continue
+        seen.add(rating_key)
+        meta = call("get_metadata", {"rating_key": str(rating_key)}) or {}
+        if not isinstance(meta, Mapping) or not meta.get("media_type"):
+            continue
+        post(webhook, scrobble_from_metadata(meta, username=str(row.get("user") or "")))
+        sent += 1
+    return sent
+
+
 def new_webhook_notifier_id(notifiers: object) -> int | None:
     """Id of a webhook we just added (empty friendly_name) or the only webhook."""
     rows = [n for n in (notifiers if isinstance(notifiers, list) else []) if isinstance(n, Mapping)]
@@ -195,7 +392,7 @@ def ensure_simkl_webhook(call, webhook: str) -> str:
         if notifier_id is None:
             raise RuntimeError("could not identify new webhook notifier")
     config = call("get_notifier_config", {"notifier_id": str(notifier_id)}) or {}
-    if isinstance(config, Mapping) and webhook_url_from_config(config) == webhook:
+    if simkl_notifier_is_current(config, webhook):
         return "ok"
     fields = webhook_notifier_fields(webhook)
     fields["notifier_id"] = str(notifier_id)
@@ -223,6 +420,19 @@ def tautulli_http_call(base_url: str, api_key: str):
         return payload["response"].get("data")
 
     return call
+
+
+def post_json(url: str, payload: dict) -> None:
+    import urllib.request
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        resp.read()
 
 
 def _parser(ini_text: str) -> configparser.ConfigParser:

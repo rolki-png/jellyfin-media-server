@@ -48,7 +48,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
         echo "No staged changes to commit."
     else
         echo "Staged changes are ready to commit."
-        read -r -p "Commit now with default message? [y/N]: " response
+        read -r -p "Commit now with default message? [y/N]: " response || true
         if [[ "${response}" =~ ^([yY][eE][sS]|[yY])$ ]]; then
             echo "Creating commit..."
             git commit -m "Initial commit: Personal media server setup"

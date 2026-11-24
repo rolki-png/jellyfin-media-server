@@ -1,0 +1,2 @@
+# 4TB media branch (sdb).  -S 180 = 180×5s = 15 minutes.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_SERIAL}=="TOSHIBA_HDWE140_9099K4XPFBRG", RUN+="/usr/sbin/hdparm -B 127 -S 180 /dev/%k"

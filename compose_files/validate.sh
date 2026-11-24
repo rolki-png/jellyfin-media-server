@@ -52,7 +52,7 @@ set -a
 source "${ENV_FILE}"
 set +a
 
-required_vars=(COMMON_PATH TZ)
+required_vars=(COMMON_PATH APPDATA_PATH TZ)
 for var_name in "${required_vars[@]}"; do
   if [[ -z "${!var_name:-}" ]]; then
     fail "Required variable '${var_name}' is empty in ${ENV_FILE}."
@@ -63,12 +63,26 @@ if [[ "${COMMON_PATH}" != /* ]]; then
   fail "COMMON_PATH must be an absolute path. Current value: '${COMMON_PATH}'"
 fi
 
+if [[ "${APPDATA_PATH}" != /* ]]; then
+  fail "APPDATA_PATH must be an absolute path. Current value: '${APPDATA_PATH}'"
+fi
+
+if [[ "${APPDATA_PATH}" == "${COMMON_PATH}" || "${APPDATA_PATH}" == "${COMMON_PATH}"/* ]]; then
+  fail "APPDATA_PATH must not be under COMMON_PATH (SQLite on mergerfs corrupts). APPDATA_PATH=${APPDATA_PATH}"
+fi
+
 if [[ -n "${PUID:-}" && ! "${PUID}" =~ ^[0-9]+$ ]]; then
   fail "PUID must be numeric. Current value: '${PUID}'"
 fi
 
 if [[ -n "${PGID:-}" && ! "${PGID}" =~ ^[0-9]+$ ]]; then
   fail "PGID must be numeric. Current value: '${PGID}'"
+fi
+
+# Homarr refuses to start without a stable 64-hex encryption key (integration secrets).
+# CI validates against .env.example, which leaves the key unset on purpose.
+if [[ "${CI_MODE}" == "false" && ! "${HOMARR_SECRET_ENCRYPTION_KEY:-}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  fail "HOMARR_SECRET_ENCRYPTION_KEY must be 64 hex characters. Generate with: openssl rand -hex 32"
 fi
 
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >/dev/null
@@ -95,6 +109,9 @@ rm -f "${tmp_config}"
 
 if [[ "${CI_MODE}" == "false" && ! -d "${COMMON_PATH}" ]]; then
   warn "COMMON_PATH does not exist yet (${COMMON_PATH}). Create it before running 'docker compose up -d'."
+fi
+if [[ "${CI_MODE}" == "false" && ! -d "${APPDATA_PATH}" ]]; then
+  warn "APPDATA_PATH does not exist yet (${APPDATA_PATH}). Run compose_files/scripts/migrate-appdata.sh after stopping the stack."
 fi
 
 # Live hardlink probe: library and downloads must share a device via COMMON_PATH.
