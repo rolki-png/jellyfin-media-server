@@ -932,10 +932,10 @@ class ReconcileModeTests(unittest.TestCase):
     def test_homelab_boot_branch_calls_recyclarr_before_return(self) -> None:
         body = (_REPO_ROOT / "compose_files/scripts/homelab-setup.sh").read_text(encoding="utf-8")
         boot = body.split('MODE}" == "boot"', 1)[1].split("fi", 1)[0]
-        # Recyclarr + catch-up run before the boot early-return.
-        pre = body.split('if [[ "${MODE}" == "boot" ]]', 1)[0]
-        self.assertIn("trigger_recent_missing_search", pre.split("main()")[-1])
-        self.assertIn("run_recyclarr_sync", pre.split("main()")[-1])
+        main_pre = body.split("main()", 1)[1].split('if [[ "${MODE}" == "boot" ]]', 1)[0]
+        # Require real call sites (not a name left only in a comment).
+        self.assertRegex(main_pre, r"(?m)^\s*trigger_recent_missing_search\s*$")
+        self.assertRegex(main_pre, r"(?m)^\s*run_recyclarr_sync\s*$")
         self.assertNotIn("clear_stuck_queue", boot)
         self.assertNotIn("Restarting qBittorrent", boot)
 
