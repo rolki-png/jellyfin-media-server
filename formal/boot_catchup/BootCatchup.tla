@@ -12,7 +12,7 @@ VARIABLES
   day,
   releaseDay,
   searched,
-  booted
+  lastBootDay
 
 Title == {"t0", "t1"}
 
@@ -20,27 +20,27 @@ TypeOK ==
   /\ day \in 0 .. MaxDay
   /\ releaseDay \in [Title -> (Unreleased .. MaxDay)]
   /\ searched \subseteq Title
-  /\ booted \in BOOLEAN
+  /\ lastBootDay \in (Unreleased .. MaxDay)
 
 Init ==
   /\ day = 0
   /\ releaseDay = [t \in Title |-> Unreleased]
   /\ searched = {}
-  /\ booted = FALSE
+  /\ lastBootDay = Unreleased
 
 Release(t) ==
   /\ releaseDay[t] = Unreleased
   /\ releaseDay' = [releaseDay EXCEPT ![t] = day]
-  /\ UNCHANGED <<day, searched, booted>>
+  /\ UNCHANGED <<day, searched, lastBootDay>>
 
 Tick ==
   /\ day < MaxDay
   /\ day' = day + 1
-  /\ UNCHANGED <<releaseDay, searched, booted>>
+  /\ UNCHANGED <<releaseDay, searched, lastBootDay>>
 
 Rss ==
   /\ searched' = searched \union { t \in Title : releaseDay[t] = day }
-  /\ UNCHANGED <<day, releaseDay, booted>>
+  /\ UNCHANGED <<day, releaseDay, lastBootDay>>
 
 InLookback(t) ==
   /\ releaseDay[t] # Unreleased
@@ -48,7 +48,7 @@ InLookback(t) ==
   /\ releaseDay[t] <= day
 
 Boot ==
-  /\ booted' = TRUE
+  /\ lastBootDay' = day
   /\ searched' = searched \union { t \in Title : InLookback(t) }
   /\ UNCHANGED <<day, releaseDay>>
 
@@ -58,9 +58,15 @@ Next ==
   \/ Rss
   \/ Boot
 
-Spec == Init /\ [][Next]_<<day, releaseDay, searched, booted>>
+Spec == Init /\ [][Next]_<<day, releaseDay, searched, lastBootDay>>
 
+\* Titles released at or before the last boot and still in lookback were searched.
 BootCoversLookback ==
-  booted => (\A t \in Title : InLookback(t) => t \in searched)
+  \A t \in Title :
+    (lastBootDay # Unreleased
+     /\ releaseDay[t] # Unreleased
+     /\ releaseDay[t] <= lastBootDay
+     /\ lastBootDay - releaseDay[t] <= Lookback)
+      => t \in searched
 
 =============================================================================
