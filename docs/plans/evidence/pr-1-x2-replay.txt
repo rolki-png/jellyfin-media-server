@@ -1,0 +1,8 @@
+Broken-variant proof for Direct Play score floor (2026-11-24):
+
+1. Set MIN_FORMAT_SCORE = -9999 in playback_compat.py
+2. test_bonuses_cannot_lift_a_hard_reject_over_minimum FAILED with:
+   MIN_FORMAT_SCORE must be 0 so HARD_REJECT+bonus cannot clear; saw -9999
+3. That is the X2 (2003) miss: DTS-HD MA (-10000) + HDR (+500) = -9500 cleared -9999.
+4. Restored MIN_FORMAT_SCORE = 0; PlaybackCompatTests green.
+
