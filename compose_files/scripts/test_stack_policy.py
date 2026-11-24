@@ -20,6 +20,7 @@ from stack_policy.arr import (
     has_remote_path_mapping,
     has_root_folder,
     ids_needing_profile,
+    import_lists_needing_profile,
     patch_download_client,
     patch_indexer,
     patch_media_management,
@@ -252,6 +253,17 @@ class ArrPayloadTests(unittest.TestCase):
         self.assertEqual(fields["minimumSeeders"], 0)
         self.assertIn(5030, fields["categories"])
         self.assertIn(5040, fields["categories"])
+
+    def test_import_lists_off_profile_are_moved_to_it(self) -> None:
+        lists = [
+            {"id": 1, "name": "Simkl User Watchlist", "qualityProfileId": 1, "searchOnAdd": True},
+            {"id": 2, "name": "Already strict", "qualityProfileId": 7},
+        ]
+        self.assertEqual(
+            import_lists_needing_profile(lists, 7),
+            [{"id": 1, "name": "Simkl User Watchlist", "qualityProfileId": 7, "searchOnAdd": True}],
+        )
+        self.assertEqual(lists[0]["qualityProfileId"], 1)
 
     def test_profile_id_and_bulk_ids(self) -> None:
         self.assertEqual(
