@@ -58,7 +58,7 @@ BootCoversLookback ==
   \A t \in Title :
     (lastBootDay # Unreleased
      /\ releaseDay[t] # Unreleased
-     /\ releaseDay[t] <= lastBootDay
+     /\ releaseDay[t] < lastBootDay
      /\ lastBootDay - releaseDay[t] <= Lookback)
       => t \in searched
 

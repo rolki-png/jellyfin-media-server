@@ -60,12 +60,13 @@ Next ==
 
 Spec == Init /\ [][Next]_<<day, releaseDay, searched, lastBootDay>>
 
-\* Titles released at or before the last boot and still in lookback were searched.
+\* Titles released strictly before the last boot day and still in lookback
+\* were searched on that boot. Same-day post-boot releases are RSS's job.
 BootCoversLookback ==
   \A t \in Title :
     (lastBootDay # Unreleased
      /\ releaseDay[t] # Unreleased
-     /\ releaseDay[t] <= lastBootDay
+     /\ releaseDay[t] < lastBootDay
      /\ lastBootDay - releaseDay[t] <= Lookback)
       => t \in searched
 
