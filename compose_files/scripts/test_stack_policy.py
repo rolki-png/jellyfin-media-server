@@ -50,6 +50,7 @@ from stack_policy.score_model import (
     require_floor_blocks_hard_reject_plus_bonus,
     score_release,
 )
+from stack_policy.envfile import parse_env_text
 from stack_policy.tautulli import (
     SIMKL_WATCHED_JSON,
     WEBHOOK_AGENT_ID,
@@ -903,6 +904,31 @@ fi
     def test_same_disk_import_hardlink_failure_exits_nonzero(self) -> None:
         body = (_REPO_ROOT / "compose_files/scripts/same-disk-import.sh").read_text(encoding="utf-8")
         self.assertIn('log "hardlink failed (unknown branch)"\n  exit 1', body)
+
+
+class EnvFileTests(unittest.TestCase):
+    def test_unquoted_ampersand_survives_parse(self) -> None:
+        parsed = parse_env_text(
+            "SIMKL_PLEX_WEBHOOK_URL=http://example.test/hook?a=1&b=2\n"
+            "OTHER=plain\n"
+        )
+        self.assertEqual(parsed["SIMKL_PLEX_WEBHOOK_URL"], "http://example.test/hook?a=1&b=2")
+        self.assertEqual(parsed["OTHER"], "plain")
+
+    def test_quoted_value_strips_quotes(self) -> None:
+        parsed = parse_env_text('SIMKL_PLEX_WEBHOOK_URL="http://x?a=1&b=2"\n')
+        self.assertEqual(parsed["SIMKL_PLEX_WEBHOOK_URL"], "http://x?a=1&b=2")
+
+    def test_homelab_setup_does_not_source_env(self) -> None:
+        body = (_REPO_ROOT / "compose_files/scripts/homelab-setup.sh").read_text(encoding="utf-8")
+        self.assertNotRegex(body, r"(?m)^\s*source\s+[\"']?\$\{ENV_FILE\}")
+        self.assertIn("load-dotenv.sh", body)
+        loader = (_REPO_ROOT / "compose_files/scripts/load-dotenv.sh").read_text(encoding="utf-8")
+        self.assertIn("stack_policy.envfile", loader)
+
+    def test_watchtower_monitor_only_defaults_true(self) -> None:
+        compose = (_REPO_ROOT / "compose_files/docker-compose.yaml").read_text(encoding="utf-8")
+        self.assertIn("WATCHTOWER_MONITOR_ONLY: ${WATCHTOWER_MONITOR_ONLY:-true}", compose)
 
 
 if __name__ == "__main__":
