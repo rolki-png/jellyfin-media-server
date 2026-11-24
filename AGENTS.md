@@ -21,7 +21,7 @@ Updates: watchtower is monitor-only and posts new images to `WATCHTOWER_NOTIFICA
 
 Restore: `restic restore latest --target /tmp/r` with the `.env` repository and password file. Live SQLite files are not in the snapshot; their consistent copies are under `/var/lib/media-server/sqlite-snapshots/<same path below APPDATA_PATH>`. Stop the stack, copy both trees back, delete stale `*.db-wal`/`*.db-shm`, start.
 
-Reboots: `media-server.service` runs `docker compose up -d` then [`scripts/boot-ensure-hardlink-policy.sh`](compose_files/scripts/boot-ensure-hardlink-policy.sh) → `homelab-setup.sh --mode=boot` (no queue wipe, no qBittorrent restart, no Recyclarr). Boot also searches monitored missing TV/movies released in the last 14 days so downtime does not skip RSS-only grabs.
+Reboots: `media-server.service` runs `docker compose up -d` then [`scripts/boot-ensure-hardlink-policy.sh`](compose_files/scripts/boot-ensure-hardlink-policy.sh) → `homelab-setup.sh --mode=boot` (no queue wipe, no qBittorrent restart). Boot syncs Recyclarr and searches monitored missing TV/movies released in the last 14 days so downtime does not skip RSS-only grabs.
 
 ## Plex feature unlock (Freeloader)
 
