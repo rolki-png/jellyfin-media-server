@@ -919,6 +919,25 @@ class EnvFileTests(unittest.TestCase):
         parsed = parse_env_text('SIMKL_PLEX_WEBHOOK_URL="http://x?a=1&b=2"\n')
         self.assertEqual(parsed["SIMKL_PLEX_WEBHOOK_URL"], "http://x?a=1&b=2")
 
+    def test_inline_comment_outside_quotes_stripped(self) -> None:
+        parsed = parse_env_text(
+            'SIMKL_PLEX_WEBHOOK_URL="https://example.test/hook?a=1&b=2" # SIMKL\n'
+            "HASH_IN_VALUE=foo#bar\n"
+        )
+        self.assertEqual(parsed["SIMKL_PLEX_WEBHOOK_URL"], "https://example.test/hook?a=1&b=2")
+        self.assertEqual(parsed["HASH_IN_VALUE"], "foo#bar")
+
+    def test_expands_unquoted_and_double_quoted_refs(self) -> None:
+        parsed = parse_env_text(
+            "SAME_DISK_SSD_ROOT=/mnt/ssd\n"
+            "APPDATA_PATH=${SAME_DISK_SSD_ROOT}/appdata\n"
+            'QUOTED="${SAME_DISK_SSD_ROOT}/q"\n'
+            "LITERAL='${SAME_DISK_SSD_ROOT}/nope'\n"
+        )
+        self.assertEqual(parsed["APPDATA_PATH"], "/mnt/ssd/appdata")
+        self.assertEqual(parsed["QUOTED"], "/mnt/ssd/q")
+        self.assertEqual(parsed["LITERAL"], "${SAME_DISK_SSD_ROOT}/nope")
+
     def test_homelab_setup_does_not_source_env(self) -> None:
         body = (_REPO_ROOT / "compose_files/scripts/homelab-setup.sh").read_text(encoding="utf-8")
         self.assertNotRegex(body, r"(?m)^\s*source\s+[\"']?\$\{ENV_FILE\}")

@@ -47,7 +47,7 @@ if [[ ! -f "${DEFAULT_ENV_FILE}" ]]; then
   fi
 fi
 
-# shellcheck source=scripts/load-dotenv.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/scripts/load-dotenv.sh" "${ENV_FILE}"
 
 required_vars=(COMMON_PATH APPDATA_PATH TZ)

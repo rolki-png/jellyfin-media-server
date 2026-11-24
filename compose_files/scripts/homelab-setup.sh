@@ -19,7 +19,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 fi
 
 # Do not `source` .env: unquoted values with `&` (SIMKL webhooks) break under bash.
-# shellcheck source=load-dotenv.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 if ! command docker info >/dev/null 2>&1; then

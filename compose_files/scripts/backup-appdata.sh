@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/../.env"
-# shellcheck source=load-dotenv.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 APPDATA_PATH="${APPDATA_PATH:?APPDATA_PATH not set}"

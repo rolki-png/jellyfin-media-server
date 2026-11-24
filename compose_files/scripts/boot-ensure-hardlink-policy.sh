@@ -9,7 +9,7 @@ COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
 
 if [[ -f "${ENV_FILE}" ]]; then
-  # shellcheck source=load-dotenv.sh
+  # shellcheck disable=SC1091
   source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 fi
 

@@ -12,7 +12,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-# shellcheck source=load-dotenv.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"

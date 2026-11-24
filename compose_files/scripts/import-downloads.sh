@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
 
-# shellcheck source=load-dotenv.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"
