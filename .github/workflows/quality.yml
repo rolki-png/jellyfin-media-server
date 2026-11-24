@@ -46,6 +46,22 @@ jobs:
         working-directory: compose_files/scripts
         run: PYTHONPATH=. python3 -m unittest test_stack_policy -v
 
+  boot-catchup-tlc:
+    name: Boot catch-up TLC
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch tla2tools
+        run: |
+          curl -fsSL -o /tmp/tla2tools.jar \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+          echo "TLA2TOOLS_JAR=/tmp/tla2tools.jar" >> "$GITHUB_ENV"
+
+      - name: Run BootCatchup models
+        run: bash formal/boot_catchup/run.sh
+
   compose-validate:
     name: Docker Compose validation
     runs-on: ubuntu-latest

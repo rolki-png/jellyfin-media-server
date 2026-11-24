@@ -51,6 +51,15 @@ from stack_policy.score_model import (
     score_release,
 )
 from stack_policy.envfile import parse_env_text
+from stack_policy.reconcile import (
+    ALL_ONLY_EFFECTS,
+    BOOT_EFFECTS,
+    CLEAR_QUEUE,
+    RECYCLARR,
+    RESTART_QBIT,
+    boot_forbids,
+    effects_for,
+)
 from stack_policy.tautulli import (
     SIMKL_WATCHED_JSON,
     WEBHOOK_AGENT_ID,
@@ -904,6 +913,31 @@ fi
     def test_same_disk_import_hardlink_failure_exits_nonzero(self) -> None:
         body = (_REPO_ROOT / "compose_files/scripts/same-disk-import.sh").read_text(encoding="utf-8")
         self.assertIn('log "hardlink failed (unknown branch)"\n  exit 1', body)
+
+
+class ReconcileModeTests(unittest.TestCase):
+    def test_boot_includes_catchup_and_recyclarr(self) -> None:
+        boot = effects_for("boot")
+        self.assertEqual(boot, BOOT_EFFECTS)
+        self.assertIn(RECYCLARR, boot)
+
+    def test_boot_forbids_queue_wipe_and_qbit_restart(self) -> None:
+        self.assertTrue(boot_forbids(CLEAR_QUEUE))
+        self.assertTrue(boot_forbids(RESTART_QBIT))
+        self.assertTrue(ALL_ONLY_EFFECTS.isdisjoint(effects_for("boot")))
+
+    def test_all_superset_of_boot(self) -> None:
+        self.assertTrue(effects_for("boot") <= effects_for("all"))
+
+    def test_homelab_boot_branch_calls_recyclarr_before_return(self) -> None:
+        body = (_REPO_ROOT / "compose_files/scripts/homelab-setup.sh").read_text(encoding="utf-8")
+        boot = body.split('MODE}" == "boot"', 1)[1].split("fi", 1)[0]
+        main_pre = body.split("main()", 1)[1].split('if [[ "${MODE}" == "boot" ]]', 1)[0]
+        # Require real call sites (not a name left only in a comment).
+        self.assertRegex(main_pre, r"(?m)^\s*trigger_recent_missing_search\s*$")
+        self.assertRegex(main_pre, r"(?m)^\s*run_recyclarr_sync\s*$")
+        self.assertNotIn("clear_stuck_queue", boot)
+        self.assertNotIn("Restarting qBittorrent", boot)
 
 
 class EnvFileTests(unittest.TestCase):

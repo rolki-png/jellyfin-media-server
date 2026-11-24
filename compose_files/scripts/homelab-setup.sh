@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Apply stack policy to Radarr, Sonarr, qBittorrent, Recyclarr, Unpackerr, Bazarr, Plex, and Tautulli (SIMKL).
 # --mode=boot  hardlink + Plex host prefs + quality profiles + recent missing search
-#              (no queue wipes / qBit restart / Recyclarr)
+#              + Recyclarr sync (no queue wipes / qBit restart)
 # --mode=all   full first-run / manual (default)
 set -euo pipefail
 
@@ -730,16 +730,18 @@ main() {
   log "Homelab setup mode=${MODE} COMMON_PATH=${COMMON_PATH} APPDATA_PATH=${APPDATA_PATH}"
   apply_hardlink_policy
 
+  # Boot and all both catch up RSS gaps and sync Direct Play scores.
+  trigger_recent_missing_search
+  run_recyclarr_sync
+
   if [[ "${MODE}" == "boot" ]]; then
-    trigger_recent_missing_search
-    log "Homelab setup complete (boot: skipped queue/scan/qBit restart/Recyclarr)"
+    log "Homelab setup complete (boot: skipped queue wipe / download scan / qBit restart)"
     return 0
   fi
 
   clear_stuck_queue 7878 "${RADARR_KEY}" Radarr
   clear_stuck_queue 8989 "${SONARR_KEY}" Sonarr
   trigger_download_scan
-  trigger_recent_missing_search
   trigger_plex_library_scan
 
   if docker ps --format '{{.Names}}' | grep -qx qbittorrent; then
@@ -748,7 +750,6 @@ main() {
     sleep 4
   fi
 
-  run_recyclarr_sync
   trigger_download_scan
   log "Homelab setup complete"
 }
