@@ -24,6 +24,7 @@ jobs:
           # build-freeloader-plex.sh is gitignored with freeloader/ (local unlock build).
           shellcheck setup-new-github-repo.sh \
             compose_files/validate.sh \
+            compose_files/scripts/load-dotenv.sh \
             compose_files/scripts/homelab-setup.sh \
             compose_files/scripts/boot-ensure-hardlink-policy.sh \
             compose_files/scripts/same-disk-import.sh \
@@ -31,6 +32,7 @@ jobs:
             compose_files/scripts/migrate-appdata.sh \
             compose_files/scripts/plex-init.sh \
             compose_files/scripts/backup-appdata.sh \
+            compose_files/scripts/import-downloads.sh \
             compose_files/systemd/install-media-server-unit.sh
 
   stack-policy:

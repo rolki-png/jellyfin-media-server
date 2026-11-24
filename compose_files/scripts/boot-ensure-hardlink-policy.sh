@@ -9,10 +9,8 @@ COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
 
 if [[ -f "${ENV_FILE}" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "${ENV_FILE}"
-  set +a
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 fi
 
 COMMON_PATH="${COMMON_PATH:-/mnt/combined-media/Isyrr}"

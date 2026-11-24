@@ -6,10 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/../.env"
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 APPDATA_PATH="${APPDATA_PATH:?APPDATA_PATH not set}"
 export RESTIC_REPOSITORY="${RESTIC_REPOSITORY:?RESTIC_REPOSITORY not set}"
