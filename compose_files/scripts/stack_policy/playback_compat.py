@@ -12,8 +12,10 @@ import re
 
 HARD_REJECT = -10000
 PREFERRED = 100
-# Untagged 4K WEB often scores ~0; only -10000 rejects must miss the cutoff.
-MIN_FORMAT_SCORE = -9999
+# Every negative score is HARD_REJECT, so untagged 4K WEB scores >= 0 and passes.
+# A minimum just above HARD_REJECT let bonuses lift rejects over it: X2 grabbed
+# DTS-HD MA + HDR at -9500 under -9999. At 0, bonuses must reach +10000 first.
+MIN_FORMAT_SCORE = 0
 
 # TRaSH Guides trash_ids (Radarr vs Sonarr catalogs differ).
 _RADARR = {
@@ -23,6 +25,7 @@ _RADARR = {
     "DTS-HD MA": "dcf3ec6938fa32445f590a4da84256cd",
     "DTS-HD HRA": "8e109e50e0a0b83a5098b056e13bf6db",
     "DTS": "1c1a4c5e823891c75bc50380a6866f73",
+    "DTS-ES": "f9f847ac70a0af62ea4a08280b859636",
     "DD+ ATMOS": "1af239278386be2919e1bcee0bde047e",
     "DD+": "185f1dd7264c4562b9022d963ac37424",
     "AAC": "240770601cc226190c367ef59aba7463",
@@ -34,12 +37,13 @@ _SONARR = {
     "DTS-HD MA": "c429417a57ea8c41d57e6990a8b0033f",
     "DTS-HD HRA": "cfa5fbd8f02a86fc55d8d223d06a5e1f",
     "DTS": "5964f2a8b3be407d083498e4459d05d0",
+    "DTS-ES": "c1a25cd67b5d2e08287c957b1eb903ec",
     "DD+ ATMOS": "4232a509ce60c4e208d13825b7c06264",
     "DD+": "63487786a8b01b7f20dd2bc90dd4a477",
     "AAC": "a50b8a0c62274a7c38b09a9619ba9d86",
 }
 
-_REJECT_NAMES = ("TrueHD ATMOS", "TrueHD", "DTS X", "DTS-HD MA", "DTS-HD HRA", "DTS")
+_REJECT_NAMES = ("TrueHD ATMOS", "TrueHD", "DTS X", "DTS-HD MA", "DTS-HD HRA", "DTS", "DTS-ES")
 _PREFER_NAMES = ("DD+ ATMOS", "DD+", "AAC")
 
 

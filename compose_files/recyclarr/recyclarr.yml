@@ -6,7 +6,8 @@
 # No quality upgrades after the first grab — disk cannot hold 720p + 1080p + 4K.
 # Hard-reject TrueHD / DTS-HD: not in Plex Xbox MKV Direct Play, and this TV
 # does not decode TrueHD or DTS-HD on HDMI (DD+ / DD+ Atmos only).
-# min_format_score -9999: untagged WEB still grabs; -10000 rejects do not.
+# min_format_score 0: untagged WEB (score 0) still grabs; a -10000 reject would
+# need +10000 of bonuses to pass. -9999 let DTS-HD MA + HDR (-9500) through.
 # TV cannot play Dolby Vision → reject ALL DoVi (not only DV without HDR fallback).
 # SDR hard-reject disabled for WEB: many 4K WEB releases omit "HDR" in the title
 # and were incorrectly scored -10000, so Sonarr fell back to 1080p.
@@ -31,9 +32,10 @@ radarr:
             - DTS-HD MA
             - DTS-HD HRA
             - DTS
+            - DTS-ES
         upgrade:
           allowed: false
-        min_format_score: -9999
+        min_format_score: 0
         qualities:
           - name: WEB 2160p
             qualities:
@@ -72,6 +74,7 @@ radarr:
           - dcf3ec6938fa32445f590a4da84256cd # DTS-HD MA
           - 8e109e50e0a0b83a5098b056e13bf6db # DTS-HD HRA
           - 1c1a4c5e823891c75bc50380a6866f73 # DTS
+          - f9f847ac70a0af62ea4a08280b859636 # DTS-ES
         assign_scores_to:
           - name: UHD Bluray + WEB
             score: -10000
@@ -103,9 +106,10 @@ sonarr:
             - DTS-HD MA
             - DTS-HD HRA
             - DTS
+            - DTS-ES
         upgrade:
           allowed: false
-        min_format_score: -9999
+        min_format_score: 0
         qualities:
           - name: WEB 2160p
             qualities:
@@ -142,6 +146,7 @@ sonarr:
           - c429417a57ea8c41d57e6990a8b0033f # DTS-HD MA
           - cfa5fbd8f02a86fc55d8d223d06a5e1f # DTS-HD HRA
           - 5964f2a8b3be407d083498e4459d05d0 # DTS
+          - c1a25cd67b5d2e08287c957b1eb903ec # DTS-ES
         assign_scores_to:
           - name: WEB-2160p
             score: -10000
