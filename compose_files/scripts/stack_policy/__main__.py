@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from datetime import date
+
 from stack_policy.arr import (
     custom_script_id,
     custom_script_payload,
@@ -16,12 +18,21 @@ from stack_policy.arr import (
     has_remote_path_mapping,
     has_root_folder,
     ids_needing_profile,
+    allow_named_qualities,
     patch_download_client,
     patch_media_management,
     plex_server_payload,
     quality_profile_id,
     remote_path_payload,
     stuck_queue_ids,
+    patch_indexer,
+)
+from stack_policy.catchup import (
+    DEFAULT_LOOKBACK_DAYS,
+    episode_search_command,
+    movies_search_command,
+    recent_missing_episode_ids,
+    recent_missing_movie_ids,
 )
 from stack_policy.bazarr import (
     apikey_from_config,
@@ -31,8 +42,11 @@ from stack_policy.bazarr import (
 from stack_policy.layout import check_compose_doc
 from stack_policy.plex_prefs import apply_host_prefs
 from stack_policy.profiles import RADARR_QUALITY_PROFILE, SONARR_QUALITY_PROFILE
+from stack_policy.qbittorrent import seed_unlimited_preferences
 from stack_policy.tautulli import (
     ensure_simkl_webhook,
+    post_json,
+    replay_empty_watched_webhooks,
     tautulli_api_key,
     tautulli_http_call,
 )
@@ -51,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("patch-media-mgmt")
     sub.add_parser("patch-download-client")
+    sub.add_parser("patch-indexer")
+    p_any = sub.add_parser("allow-qualities")
+    p_any.add_argument("names", nargs="+")
 
     p_prof = sub.add_parser("profile-name")
     p_prof.add_argument("app", choices=("radarr", "sonarr"))
@@ -76,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     p_plex = sub.add_parser("apply-plex-prefs")
     p_plex.add_argument("prefs_path")
     p_plex.add_argument("--advertise", default="")
+    p_plex.add_argument("--lan-networks", default="")
 
     p_bazarr = sub.add_parser("apply-bazarr-config")
     p_bazarr.add_argument("config_path")
@@ -96,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     p_plex_n.add_argument("--token", required=True)
 
     sub.add_parser("has-plex-notify")
+    sub.add_parser("qbit-seed-prefs")
     sub.add_parser("stuck-queue-ids")
     p_root = sub.add_parser("has-root-folder")
     p_root.add_argument("path")
@@ -108,6 +127,15 @@ def main(argv: list[str] | None = None) -> int:
     p_rpp.add_argument("--host", required=True)
     p_rpp.add_argument("--remote", required=True)
     p_rpp.add_argument("--local", required=True)
+
+    p_ep_ids = sub.add_parser("recent-missing-episode-ids")
+    p_ep_ids.add_argument("--days", type=int, default=DEFAULT_LOOKBACK_DAYS)
+    p_ep_ids.add_argument("--today", default="")
+    p_mov_ids = sub.add_parser("recent-missing-movie-ids")
+    p_mov_ids.add_argument("--days", type=int, default=DEFAULT_LOOKBACK_DAYS)
+    p_mov_ids.add_argument("--today", default="")
+    sub.add_parser("episode-search-command")
+    sub.add_parser("movies-search-command")
 
     args = parser.parse_args(argv)
 
@@ -136,6 +164,14 @@ def main(argv: list[str] | None = None) -> int:
         rows = _load_json()
         client = rows[0] if isinstance(rows, list) else rows
         print(json.dumps(patch_download_client(client)))  # type: ignore[arg-type]
+        return 0
+
+    if args.cmd == "patch-indexer":
+        print(json.dumps(patch_indexer(_load_json())))  # type: ignore[arg-type]
+        return 0
+
+    if args.cmd == "allow-qualities":
+        print(json.dumps(allow_named_qualities(_load_json(), set(args.names))))  # type: ignore[arg-type]
         return 0
 
     if args.cmd == "profile-name":
@@ -172,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "apply-plex-prefs":
         path = Path(args.prefs_path)
         xml = path.read_text(encoding="utf-8")
-        updated = apply_host_prefs(xml, advertise_url=args.advertise)
+        updated = apply_host_prefs(xml, advertise_url=args.advertise, lan_networks=args.lan_networks)
         if updated != xml:
             path.write_text(updated, encoding="utf-8")
         return 0
@@ -205,7 +241,14 @@ def main(argv: list[str] | None = None) -> int:
         if not key:
             print("ERROR: Tautulli api_key missing", file=sys.stderr)
             return 1
-        ensure_simkl_webhook(tautulli_http_call(args.base_url, key), args.webhook)
+        call = tautulli_http_call(args.base_url, key)
+        status = ensure_simkl_webhook(call, args.webhook)
+        if status == "updated":
+            replay_empty_watched_webhooks(call, post_json, args.webhook)
+        return 0
+
+    if args.cmd == "qbit-seed-prefs":
+        print(json.dumps(seed_unlimited_preferences()))
         return 0
 
     if args.cmd == "plex-notify-payload":
@@ -241,6 +284,37 @@ def main(argv: list[str] | None = None) -> int:
                 remote_path_payload(host=args.host, remote=args.remote, local=args.local)
             )
         )
+        return 0
+
+    if args.cmd in ("recent-missing-episode-ids", "recent-missing-movie-ids"):
+        raw = _load_json()
+        if isinstance(raw, dict):
+            records = list(raw.get("records") or [])
+        elif isinstance(raw, list):
+            records = raw
+        else:
+            print("ERROR: expected JSON list or {records: [...]}", file=sys.stderr)
+            return 1
+        today = date.fromisoformat(args.today) if args.today else date.today()
+        if args.cmd == "recent-missing-episode-ids":
+            ids = recent_missing_episode_ids(records, today=today, lookback_days=args.days)
+        else:
+            ids = recent_missing_movie_ids(records, today=today, lookback_days=args.days)
+        print(json.dumps(ids))
+        return 0
+
+    if args.cmd == "episode-search-command":
+        cmd = episode_search_command(list(_load_json()))  # type: ignore[arg-type]
+        if cmd is None:
+            return 0
+        print(json.dumps(cmd))
+        return 0
+
+    if args.cmd == "movies-search-command":
+        cmd = movies_search_command(list(_load_json()))  # type: ignore[arg-type]
+        if cmd is None:
+            return 0
+        print(json.dumps(cmd))
         return 0
 
     return 2

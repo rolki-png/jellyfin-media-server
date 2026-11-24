@@ -7,24 +7,27 @@ import re
 TRANSCODER_TEMP = "/transcode"
 
 
+def ensure_pref(xml: str, name: str, value: str) -> str:
+    attr = f'{name}="{value}"'
+    pattern = rf'\b{name}="[^"]*"'
+    if re.search(pattern, xml):
+        return re.sub(pattern, attr, xml)
+    return xml.replace("<Preferences ", f"<Preferences {attr} ", 1)
+
+
 def ensure_transcoder_temp(xml: str, target: str = TRANSCODER_TEMP) -> str:
-    attr = f'TranscoderTempDirectory="{target}"'
-    if re.search(r'TranscoderTempDirectory="[^"]*"', xml):
-        return re.sub(r'TranscoderTempDirectory="[^"]*"', attr, xml)
-    return xml.replace("<Preferences ", f"<Preferences {attr} ", 1)
+    return ensure_pref(xml, "TranscoderTempDirectory", target)
 
 
-def ensure_custom_connections(xml: str, url: str) -> str:
-    if not url:
-        return xml
-    attr = f'customConnections="{url}"'
-    if re.search(r'customConnections="[^"]*"', xml):
-        return re.sub(r'customConnections="[^"]*"', attr, xml)
-    return xml.replace("<Preferences ", f"<Preferences {attr} ", 1)
+def apply_host_prefs(xml: str, *, advertise_url: str = "", lan_networks: str = "") -> str:
+    """advertise_url → customConnections; lan_networks → LanNetworksBandwidth.
 
-
-def apply_host_prefs(xml: str, *, advertise_url: str = "") -> str:
+    LanNetworksBandwidth replaces Plex's subnet auto-detection, so it must list the
+    home LAN as well as the tailnet (100.64.0.0/10) or local clients turn "remote".
+    """
     updated = ensure_transcoder_temp(xml)
     if advertise_url:
-        updated = ensure_custom_connections(updated, advertise_url)
+        updated = ensure_pref(updated, "customConnections", advertise_url)
+    if lan_networks:
+        updated = ensure_pref(updated, "LanNetworksBandwidth", lan_networks)
     return updated

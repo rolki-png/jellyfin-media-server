@@ -16,13 +16,15 @@ if [[ -f "${ENV_FILE}" ]]; then
 fi
 
 COMMON_PATH="${COMMON_PATH:-/mnt/combined-media/Isyrr}"
-RADARR_CONFIG="${COMMON_PATH}/configs/radarr/config.xml"
-SONARR_CONFIG="${COMMON_PATH}/configs/sonarr/config.xml"
+APPDATA_PATH="${APPDATA_PATH:-${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}/appdata}"
+RADARR_CONFIG="${APPDATA_PATH}/radarr/config.xml"
+SONARR_CONFIG="${APPDATA_PATH}/sonarr/config.xml"
 
 log() { echo "boot-ensure-hardlink-policy: $*" >&2; }
 
 # Disk / mergerfs sanity (fail loud so journald shows why policy could not apply).
 for p in "${COMMON_PATH}" \
+         "${APPDATA_PATH}" \
          "${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}" \
          "${SAME_DISK_HDD_ROOT:-/mnt/4tb-media-2/Isyrr}"; do
   if [[ ! -d "${p}" ]]; then
@@ -40,7 +42,7 @@ if findmnt -n "${COMMON_PATH}/qbittorrent/downloads" >/dev/null 2>&1; then
 fi
 
 if [[ ! -f "${RADARR_CONFIG}" || ! -f "${SONARR_CONFIG}" ]]; then
-  log "ERROR: missing *arr config.xml under ${COMMON_PATH}/configs"
+  log "ERROR: missing *arr config.xml under ${APPDATA_PATH}"
   exit 1
 fi
 

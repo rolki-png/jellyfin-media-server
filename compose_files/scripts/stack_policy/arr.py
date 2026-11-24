@@ -113,6 +113,33 @@ def has_plex_server_notification(notifications: list[dict[str, Any]]) -> bool:
     return any(n.get("implementation") == "PlexServer" for n in notifications)
 
 
+def with_any_language(profile: dict[str, Any]) -> dict[str, Any]:
+    """Allow HuN/dual-audio packs; nCore titles parse as Hungarian but include English."""
+    out = dict(profile)
+    out["language"] = {"id": -1, "name": "Any"}
+    return out
+
+
+def allow_named_qualities(profile: dict[str, Any], names: set[str]) -> dict[str, Any]:
+    """Stock Any omits WEB-720p; Seerr updates can leave titles on Any."""
+
+    def walk(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for raw in items:
+            row = dict(raw)
+            label = row.get("name") or (row.get("quality") or {}).get("name")
+            if label in names:
+                row["allowed"] = True
+            if row.get("items"):
+                row["items"] = walk(row["items"])
+            out.append(row)
+        return out
+
+    updated = dict(profile)
+    updated["items"] = walk(list(profile.get("items") or []))
+    return updated
+
+
 def plex_server_payload(*, host: str, token: str) -> dict[str, Any]:
     return {
         "name": "Plex",
@@ -130,3 +157,32 @@ def plex_server_payload(*, host: str, token: str) -> dict[str, Any]:
         ],
         "tags": [],
     }
+
+
+# Jackett ncore remaps Newznab IDs: 5030=TV/SD, 5040=TV/HD (5045 is unused).
+_TV_CATS = (5000, 5030, 5040, 5050)
+_MOVIE_CATS = (2000, 2030, 2040)
+
+
+def patch_indexer(indexer: dict[str, Any]) -> dict[str, Any]:
+    """ncore reports 0 seeders often; still snatch. Include SD/HD cats so 720p is visible."""
+    out = dict(indexer)
+    fields: list[dict[str, Any]] = []
+    for raw in out.get("fields") or []:
+        field = dict(raw)
+        name = field.get("name")
+        if name == "minimumSeeders":
+            field["value"] = 0
+        elif name == "categories":
+            cats = [int(c) for c in (field.get("value") or [])]
+            extra = _TV_CATS if any(5000 <= c < 6000 or c == 5045 for c in cats) else (
+                _MOVIE_CATS if any(2000 <= c < 3000 for c in cats) else ()
+            )
+            for cid in extra:
+                if cid not in cats:
+                    cats.append(cid)
+            field["value"] = cats
+        fields.append(field)
+    out["fields"] = fields
+    return out
+
