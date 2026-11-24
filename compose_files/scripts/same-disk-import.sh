@@ -110,7 +110,7 @@ if [[ "${src_branch}" != "ssd" && "${src_branch}" != "hdd" ]]; then
   fi
   rm -f "${tmp}"
   log "hardlink failed (unknown branch)"
-  exit 0
+  exit 1
 fi
 
 target_root=$SSD_ROOT

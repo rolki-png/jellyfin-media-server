@@ -67,9 +67,22 @@ if [[ "${APPDATA_PATH}" != /* ]]; then
   fail "APPDATA_PATH must be an absolute path. Current value: '${APPDATA_PATH}'"
 fi
 
-if [[ "${APPDATA_PATH}" == "${COMMON_PATH}" || "${APPDATA_PATH}" == "${COMMON_PATH}"/* ]]; then
-  fail "APPDATA_PATH must not be under COMMON_PATH (SQLite on mergerfs corrupts). APPDATA_PATH=${APPDATA_PATH}"
+path_must_not_be_under() {
+  local child=$1 parent=$2 reason=$3
+  if [[ "${child}" == "${parent}" || "${child}" == "${parent}"/* ]]; then
+    fail "${reason}"
+  fi
+}
+
+path_must_not_be_under "${APPDATA_PATH}" "${COMMON_PATH}" \
+  "APPDATA_PATH must not be under COMMON_PATH (SQLite on mergerfs corrupts). APPDATA_PATH=${APPDATA_PATH}"
+
+PLEX_TRANSCODE_DIR="${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}"
+if [[ "${PLEX_TRANSCODE_DIR}" != /* ]]; then
+  fail "PLEX_TRANSCODE_DIR must be an absolute path. Current value: '${PLEX_TRANSCODE_DIR}'"
 fi
+path_must_not_be_under "${PLEX_TRANSCODE_DIR}" "${COMMON_PATH}" \
+  "PLEX_TRANSCODE_DIR must not be under COMMON_PATH (transcode on mergerfs stutters). PLEX_TRANSCODE_DIR=${PLEX_TRANSCODE_DIR}"
 
 if [[ -n "${PUID:-}" && ! "${PUID}" =~ ^[0-9]+$ ]]; then
   fail "PUID must be numeric. Current value: '${PUID}'"

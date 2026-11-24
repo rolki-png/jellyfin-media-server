@@ -874,6 +874,29 @@ fi
         self.assertIn("read -r -p", setup)
         self.assertIn("read -r -p \"Commit now with default message? [y/N]: \" response || true", setup)
 
+    def test_validate_rejects_transcode_under_common_path(self) -> None:
+        script = r"""
+set -euo pipefail
+fail() { echo "ERROR: $*" >&2; exit 1; }
+path_must_not_be_under() {
+  local child=$1 parent=$2 reason=$3
+  if [[ "${child}" == "${parent}" || "${child}" == "${parent}"/* ]]; then
+    fail "${reason}"
+  fi
+}
+COMMON_PATH=/srv/media/isyrr
+PLEX_TRANSCODE_DIR=/srv/media/isyrr/plex/transcode
+path_must_not_be_under "${PLEX_TRANSCODE_DIR}" "${COMMON_PATH}" \
+  "PLEX_TRANSCODE_DIR must not be under COMMON_PATH (transcode on mergerfs stutters). PLEX_TRANSCODE_DIR=${PLEX_TRANSCODE_DIR}"
+"""
+        proc = subprocess.run(["bash", "-c", script], check=False, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("PLEX_TRANSCODE_DIR", proc.stderr)
+
+    def test_same_disk_import_hardlink_failure_exits_nonzero(self) -> None:
+        body = (_REPO_ROOT / "compose_files/scripts/same-disk-import.sh").read_text(encoding="utf-8")
+        self.assertIn('log "hardlink failed (unknown branch)"\n  exit 1', body)
+
 
 if __name__ == "__main__":
     unittest.main()
