@@ -81,8 +81,15 @@ PLEX_TRANSCODE_DIR="${PLEX_TRANSCODE_DIR:-/var/lib/plex-transcode}"
 if [[ "${PLEX_TRANSCODE_DIR}" != /* ]]; then
   fail "PLEX_TRANSCODE_DIR must be an absolute path. Current value: '${PLEX_TRANSCODE_DIR}'"
 fi
+# Pool is COMMON_PATH's parent (AGENTS.md / systemd README). Sibling paths like
+# ${pool}/transcode still bind onto mergerfs even when outside the library tree.
+MEDIA_POOL="$(dirname -- "${COMMON_PATH}")"
 path_must_not_be_under "${PLEX_TRANSCODE_DIR}" "${COMMON_PATH}" \
   "PLEX_TRANSCODE_DIR must not be under COMMON_PATH (transcode on mergerfs stutters). PLEX_TRANSCODE_DIR=${PLEX_TRANSCODE_DIR}"
+if [[ "${MEDIA_POOL}" != "/" ]]; then
+  path_must_not_be_under "${PLEX_TRANSCODE_DIR}" "${MEDIA_POOL}" \
+    "PLEX_TRANSCODE_DIR must not be under the media pool ${MEDIA_POOL} (parent of COMMON_PATH; mergerfs). PLEX_TRANSCODE_DIR=${PLEX_TRANSCODE_DIR}"
+fi
 
 if [[ -n "${PUID:-}" && ! "${PUID}" =~ ^[0-9]+$ ]]; then
   fail "PUID must be numeric. Current value: '${PUID}'"
@@ -166,6 +173,15 @@ if [[ "${CI_MODE}" == "false" ]]; then
   fi
   if ! grep -E '^[^#]*fuse\.mergerfs' /etc/fstab | grep -q 'category.create=epmfs'; then
     warn "fstab mergerfs line should include category.create=epmfs (HDD-first creates)"
+  fi
+  # Resolve nearest existing ancestor so a missing transcode dir still reveals FUSE.
+  transcode_probe="${PLEX_TRANSCODE_DIR}"
+  while [[ ! -e "${transcode_probe}" && "${transcode_probe}" != "/" ]]; do
+    transcode_probe="$(dirname -- "${transcode_probe}")"
+  done
+  transcode_fstype="$(findmnt -n -o FSTYPE --target "${transcode_probe}" 2>/dev/null || true)"
+  if [[ "${transcode_fstype}" == *mergerfs* ]]; then
+    fail "PLEX_TRANSCODE_DIR is on mergerfs (${transcode_fstype} at ${transcode_probe}). Use local disk."
   fi
 fi
 

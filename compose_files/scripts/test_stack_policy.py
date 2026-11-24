@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -874,24 +875,30 @@ fi
         self.assertIn("read -r -p", setup)
         self.assertIn("read -r -p \"Commit now with default message? [y/N]: \" response || true", setup)
 
+    def _validate_ci(self, plex_transcode_dir: str) -> subprocess.CompletedProcess[str]:
+        validate = _REPO_ROOT / "compose_files" / "validate.sh"
+        env = os.environ.copy()
+        env["PLEX_TRANSCODE_DIR"] = plex_transcode_dir
+        return subprocess.run(
+            ["bash", str(validate), "--ci"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(_REPO_ROOT),
+        )
+
     def test_validate_rejects_transcode_under_common_path(self) -> None:
-        script = r"""
-set -euo pipefail
-fail() { echo "ERROR: $*" >&2; exit 1; }
-path_must_not_be_under() {
-  local child=$1 parent=$2 reason=$3
-  if [[ "${child}" == "${parent}" || "${child}" == "${parent}"/* ]]; then
-    fail "${reason}"
-  fi
-}
-COMMON_PATH=/srv/media/isyrr
-PLEX_TRANSCODE_DIR=/srv/media/isyrr/plex/transcode
-path_must_not_be_under "${PLEX_TRANSCODE_DIR}" "${COMMON_PATH}" \
-  "PLEX_TRANSCODE_DIR must not be under COMMON_PATH (transcode on mergerfs stutters). PLEX_TRANSCODE_DIR=${PLEX_TRANSCODE_DIR}"
-"""
-        proc = subprocess.run(["bash", "-c", script], check=False, capture_output=True, text=True)
+        proc = self._validate_ci("/srv/media/isyrr/plex/transcode")
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("PLEX_TRANSCODE_DIR", proc.stderr)
+
+    def test_validate_rejects_transcode_on_media_pool_parent(self) -> None:
+        # .env.example COMMON_PATH=/srv/media/isyrr → pool is /srv/media (AGENTS.md).
+        proc = self._validate_ci("/srv/media/transcode")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("PLEX_TRANSCODE_DIR", proc.stderr)
+        self.assertRegex(proc.stderr, r"media pool|/srv/media")
 
     def test_same_disk_import_hardlink_failure_exits_nonzero(self) -> None:
         body = (_REPO_ROOT / "compose_files/scripts/same-disk-import.sh").read_text(encoding="utf-8")
