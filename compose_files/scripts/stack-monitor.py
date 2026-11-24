@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Alert (ntfy) when the compose stack, its disks, or the appdata backup go wrong.
-
-Run by media-monitor.timer. Restarts a container the first time it turns unhealthy.
-"""
-
 from __future__ import annotations
 
 import json

@@ -1,9 +1,4 @@
 #!/bin/sh
-# Wrap upstream entrypoint with temporary local patches:
-# - qBittorrent 5.x login returns HTTP 204 + SID cookie, not body "Ok."
-# - Docker file bind-mounts (e.g. this script) appear in psutil partitions; skip
-#   non-directory mountpoints so Disk Usage does not list them.
-# - Downloads card: count full *arr queue (not only state=downloading)
 set -e
 
 python3 <<'PY'
@@ -40,7 +35,6 @@ NEW_DISK = '''        if mp in _SKIP_MOUNTS:
             continue
         if any(mp.startswith(p) for p in _SKIP_PREFIXES):
             continue
-        # File bind-mounts (Docker "mount a file") are partitions but not disks.
         if not Path(mp).is_dir():
             continue
         _try_add(mp)'''
@@ -78,8 +72,6 @@ elif OLD_DISK in sys_txt:
 else:
     print("panelarr: WARNING — disk collector pattern not found; upstream may have changed")
 
-# Dashboard "0T / 0N Idle" only counted trackedDownloadState==downloading.
-# Stuck importBlocked / warning queue items (common here) were ignored.
 OLD_STATS = '''    torrent_active = sum(
         1
         for r in all_records
@@ -93,12 +85,11 @@ OLD_STATS = '''    torrent_active = sum(
 
 NEW_STATS = '''    torrent_active = sum(1 for r in all_records if r.get("protocol") == "torrent")
     nzb_active = sum(1 for r in all_records if r.get("protocol") == "usenet")
-    # Prefer live client downloading count when *arr queue is empty of torrents.
     if isinstance(qbit, dict) and qbit.get("configured"):
         torrent_active = max(torrent_active, int(qbit.get("downloading") or 0))'''
 
 dl_txt = DOWNLOADS.read_text()
-if "Prefer live client downloading count" in dl_txt:
+if "max(torrent_active, int(qbit.get(\"downloading\") or 0))" in dl_txt:
     print("panelarr: download stats already count full *arr queue")
 elif OLD_STATS in dl_txt:
     DOWNLOADS.write_text(dl_txt.replace(OLD_STATS, NEW_STATS, 1))
@@ -106,7 +97,6 @@ elif OLD_STATS in dl_txt:
 else:
     print("panelarr: WARNING — download stats pattern not found; upstream may have changed")
 
-# Frontend: treat importBlocked/warning as non-idle on the Downloads card.
 OLD_IDLE = 'q=(d==null?void 0:d.filter(s=>s.status==="downloading"))??[]'
 NEW_IDLE = (
     'q=(d==null?void 0:d.filter(s=>s.status==="downloading"'
@@ -125,7 +115,6 @@ for asset in DASH_ASSETS.glob("dashboard-*.js"):
 if not patched_dash:
     print("panelarr: WARNING — dashboard idle filter pattern not found")
 
-# Drop stale bytecode so uvicorn loads the patched sources.
 for cache_dir in (
     CONFIG.parent / "__pycache__",
     ARR.parent / "__pycache__",

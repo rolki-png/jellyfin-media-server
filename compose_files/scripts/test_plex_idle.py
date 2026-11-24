@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Seam: stack_policy.plex_idle — Xbox vs this-desktop vs idle power/DPMS."""
 
 from __future__ import annotations
 

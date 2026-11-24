@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Apply stack policy to Radarr, Sonarr, qBittorrent, Recyclarr, Unpackerr, Bazarr, Plex, and Tautulli (SIMKL).
-# --mode=boot  hardlink + Plex host prefs + quality profiles + recent missing search
-#              + Recyclarr sync (no queue wipes / qBit restart)
-# --mode=all   full first-run / manual (default)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,7 +19,6 @@ fi
 source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 if ! command docker info >/dev/null 2>&1; then
-  # sudo docker is the engine binary, not this function.
   # shellcheck disable=SC2032,SC2033
   docker() { sudo docker "$@"; }
 fi
@@ -209,7 +204,6 @@ trigger_download_scan() {
     | arr_post 8989 "${SONARR_KEY}" "/api/v3/command" || true
 }
 
-# Paginate wanted/missing into a JSON array (RSS does not look backward after downtime).
 collect_wanted_missing() {
   local port=$1 key=$2
   PORT="${port}" KEY="${key}" python3 - <<'PY'
@@ -341,8 +335,6 @@ for row in json.load(sys.stdin):
 '
 }
 
-# Import lists search on add: a list left on Any grabs remuxes the profile editor
-# would only fix after the download (The Brutalist via Simkl Watchlist).
 pin_import_list_profiles() {
   local port=$1 key=$2 name=$3 profile=$4 row
   arr_get "${port}" "${key}" "/api/v3/importlist" | policy import-list-payloads "${profile}" \

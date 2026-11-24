@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Print automation pipeline health summary for manual dashboard checks.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +9,6 @@ ENV_FILE="${COMPOSE_DIR}/.env"
 source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 if ! command docker info >/dev/null 2>&1; then
-  # sudo docker is the engine binary, not this function.
   # shellcheck disable=SC2032,SC2033
   docker() { sudo docker "$@"; }
 fi
@@ -42,7 +40,6 @@ if findmnt -n -o FSTYPE --target "${APPDATA_PATH}" 2>/dev/null | grep -qi 'fuse.
 fi
 echo
 
-# Core always-on vs optional (compose profiles: jellyfin, prowlarr).
 for svc in plex tautulli radarr sonarr jackett qbittorrent flaresolverr seerr unpackerr bazarr recyclarr watchtower panelarr homarr paperless paperless-redis paperless-gotenberg paperless-tika; do
   if docker_ok "${svc}"; then
     status="$(docker inspect --format '{{.State.Status}}' "${svc}" 2>/dev/null)"

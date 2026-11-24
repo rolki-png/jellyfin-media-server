@@ -1,5 +1,3 @@
-"""Search recently aired/released missing titles after downtime (RSS-only gap)."""
-
 from __future__ import annotations
 
 from datetime import date, timedelta

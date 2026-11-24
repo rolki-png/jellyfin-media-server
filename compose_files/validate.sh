@@ -97,8 +97,6 @@ if [[ -n "${PGID:-}" && ! "${PGID}" =~ ^[0-9]+$ ]]; then
   fail "PGID must be numeric. Current value: '${PGID}'"
 fi
 
-# Homarr refuses to start without a stable 64-hex encryption key (integration secrets).
-# CI validates against .env.example, which leaves the key unset on purpose.
 if [[ "${CI_MODE}" == "false" && ! "${HOMARR_SECRET_ENCRYPTION_KEY:-}" =~ ^[0-9a-fA-F]{64}$ ]]; then
   fail "HOMARR_SECRET_ENCRYPTION_KEY must be 64 hex characters. Generate with: openssl rand -hex 32"
 fi
@@ -113,8 +111,6 @@ if [[ ! -x "${SCRIPT_PATH}" ]]; then
   fail "same-disk import script is not executable: ${SCRIPT_PATH}"
 fi
 
-# *arr must share one filesystem view for library + downloads so hardlinks work.
-# Separate /movies|/tv + /downloads binds cause EXDEV and force copies.
 tmp_config="$(mktemp)"
 if docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --format json >"${tmp_config}" 2>/dev/null; then
   :
@@ -132,7 +128,6 @@ if [[ "${CI_MODE}" == "false" && ! -d "${APPDATA_PATH}" ]]; then
   warn "APPDATA_PATH does not exist yet (${APPDATA_PATH}). Run compose_files/scripts/migrate-appdata.sh after stopping the stack."
 fi
 
-# Live hardlink probe: library and downloads must share a device via COMMON_PATH.
 if [[ "${CI_MODE}" == "false" && -d "${COMMON_PATH}/radarr/movies" && -d "${COMMON_PATH}/qbittorrent/downloads" ]]; then
   probe_dir="${COMMON_PATH}/.hardlink-probe-$$"
   mkdir -p "${probe_dir}/lib" "${probe_dir}/dl"
@@ -146,7 +141,6 @@ if [[ "${CI_MODE}" == "false" && -d "${COMMON_PATH}/radarr/movies" && -d "${COMM
   rm -rf "${probe_dir}"
 fi
 
-# Host boot unit must re-apply policy and wait for mergerfs (skip in CI).
 if [[ "${CI_MODE}" == "false" ]]; then
   unit_src="${SCRIPT_DIR}/systemd/media-server.service.in"
   unit_dst="/etc/systemd/system/media-server.service"
@@ -172,7 +166,6 @@ if [[ "${CI_MODE}" == "false" ]]; then
   if ! grep -E '^[^#]*fuse\.mergerfs' /etc/fstab | grep -q 'category.create=epmfs'; then
     warn "fstab mergerfs line should include category.create=epmfs (HDD-first creates)"
   fi
-  # Resolve nearest existing ancestor so a missing transcode dir still reveals FUSE.
   transcode_probe="${PLEX_TRANSCODE_DIR}"
   while [[ ! -e "${transcode_probe}" && "${transcode_probe}" != "/" ]]; do
     transcode_probe="$(dirname -- "${transcode_probe}")"

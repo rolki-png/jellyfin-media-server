@@ -1,10 +1,3 @@
-"""Release custom-format score algebra for the Xbox Direct Play target.
-
-accept iff sum(assigned scores) >= MIN_FORMAT_SCORE.
-Every negative term in this policy is HARD_REJECT (-10000), so a single reject
-cannot clear a floor of 0 unless bonuses sum to at least +10000.
-"""
-
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -34,7 +27,6 @@ def score_release(scores: list[int], trash_ids: tuple[str, ...] = ()) -> Release
 def hard_reject_cannot_clear_floor(
     scores: list[int], *, minimum: int = MIN_FORMAT_SCORE
 ) -> bool:
-    """True when the stack is correctly rejected (any HARD_REJECT → not accepted)."""
     if HARD_REJECT not in scores:
         return True
     return not is_accepted(scores, minimum=minimum)

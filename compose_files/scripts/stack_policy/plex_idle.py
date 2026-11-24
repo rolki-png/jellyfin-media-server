@@ -1,10 +1,3 @@
-"""Desktop idle policy while Plex is the playback target.
-
-Xbox Direct Play hitches if this host locks or drops to power-saver. The
-Omarchy stay-awake flag blocks screensaver/lock; DPMS is applied separately so
-the PC monitor can blank during remote playback without locking.
-"""
-
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
@@ -14,7 +7,6 @@ ACTIVE_STATES = frozenset({"playing", "buffering", "paused"})
 POWER_SAVER_AFTER_SEC = 15 * 60
 POWER_PERFORMANCE = "performance"
 POWER_SAVER = "power-saver"
-# logind IdleSinceHint is CLOCK_REALTIME µs (~1e15). Monotonic µs is uptime-sized.
 _REALTIME_HINT_MIN_US = 10**14
 
 

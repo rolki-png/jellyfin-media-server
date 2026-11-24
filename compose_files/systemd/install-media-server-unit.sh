@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Render media-server.service from this clone + compose_files/.env and install it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,7 +54,6 @@ if [[ "${DEST}" == /etc/systemd/system/* ]]; then
     echo "Wrote ${DEST}; run as root to daemon-reload, or: sudo systemctl daemon-reload" >&2
     exit 1
   fi
-  # Backup + health-alert timers ride along with the main unit.
   for tpl in "${SCRIPT_DIR}"/media-backup.*.in "${SCRIPT_DIR}"/media-monitor.*.in; do
     name="$(basename -- "${tpl}" .in)"
     render "${tpl}" > "/etc/systemd/system/${name}"

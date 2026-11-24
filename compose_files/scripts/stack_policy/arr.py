@@ -1,5 +1,3 @@
-"""*arr JSON transforms — one implementation for Radarr and Sonarr."""
-
 from __future__ import annotations
 
 from typing import Any
