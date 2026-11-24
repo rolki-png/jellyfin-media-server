@@ -18,6 +18,7 @@ from stack_policy.arr import (
     has_remote_path_mapping,
     has_root_folder,
     ids_needing_profile,
+    import_lists_needing_profile,
     allow_named_qualities,
     patch_download_client,
     patch_media_management,
@@ -78,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
     p_ids = sub.add_parser("ids-needing-profile")
     p_ids.add_argument("id_key")
     p_ids.add_argument("profile_id", type=int)
+
+    p_lists = sub.add_parser("import-list-payloads")
+    p_lists.add_argument("profile_id", type=int)
 
     p_edit = sub.add_parser("editor-payload")
     p_edit.add_argument("kind", choices=("movie", "series"))
@@ -188,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "ids-needing-profile":
         ids = ids_needing_profile(_load_json(), args.id_key, args.profile_id)  # type: ignore[arg-type]
         print(json.dumps(ids))
+        return 0
+
+    if args.cmd == "import-list-payloads":
+        print(json.dumps(import_lists_needing_profile(_load_json(), args.profile_id)))  # type: ignore[arg-type]
         return 0
 
     if args.cmd == "editor-payload":

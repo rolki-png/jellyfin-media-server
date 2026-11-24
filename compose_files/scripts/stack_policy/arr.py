@@ -48,6 +48,17 @@ def ids_needing_profile(
     ]
 
 
+def import_lists_needing_profile(
+    lists: list[dict[str, Any]], profile_id: int
+) -> list[dict[str, Any]]:
+    """Import lists search on add, so a list on Any grabs before the bulk editor runs."""
+    return [
+        {**row, "qualityProfileId": profile_id}
+        for row in lists
+        if row.get("qualityProfileId") != profile_id
+    ]
+
+
 def custom_script_id(notifications: list[dict[str, Any]], path: str) -> int | None:
     for row in notifications:
         if row.get("implementation") != "CustomScript":
