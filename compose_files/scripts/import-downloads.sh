@@ -6,10 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/.env"
 
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
+# shellcheck source=load-dotenv.sh
+source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"
 APPDATA_PATH="${APPDATA_PATH:?APPDATA_PATH not set}"

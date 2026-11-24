@@ -18,10 +18,9 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
+# Do not `source` .env: unquoted values with `&` (SIMKL webhooks) break under bash.
+# shellcheck source=load-dotenv.sh
+source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 
 if ! command docker info >/dev/null 2>&1; then
   # sudo docker is the engine binary, not this function.

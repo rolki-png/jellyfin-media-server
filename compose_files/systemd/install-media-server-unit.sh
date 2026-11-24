@@ -13,10 +13,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
+# shellcheck source=../scripts/load-dotenv.sh
+source "${COMPOSE_DIR}/scripts/load-dotenv.sh" "${ENV_FILE}"
 
 COMMON_PATH="${COMMON_PATH:?COMMON_PATH not set}"
 SSD="${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}"
