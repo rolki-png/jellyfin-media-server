@@ -42,6 +42,12 @@ from stack_policy.playback_compat import (
     score_for,
     score_map,
 )
+from stack_policy.score_model import (
+    hard_reject_cannot_clear_floor,
+    is_accepted,
+    require_floor_blocks_hard_reject_plus_bonus,
+    score_release,
+)
 from stack_policy.tautulli import (
     SIMKL_WATCHED_JSON,
     WEBHOOK_AGENT_ID,
@@ -366,9 +372,29 @@ class PlaybackCompatTests(unittest.TestCase):
         self.assertEqual(score_for("radarr", "240770601cc226190c367ef59aba7463"), PREFERRED)
         self.assertEqual(score_for("sonarr", "63487786a8b01b7f20dd2bc90dd4a477"), PREFERRED)
 
-    def test_min_format_score_blocks_only_hard_rejects(self) -> None:
-        self.assertEqual(MIN_FORMAT_SCORE, -9999)
-        self.assertGreater(MIN_FORMAT_SCORE, HARD_REJECT)
+    def test_dts_es_is_a_hard_reject(self) -> None:
+        self.assertEqual(score_for("radarr", "f9f847ac70a0af62ea4a08280b859636"), HARD_REJECT)
+        self.assertEqual(score_for("sonarr", "c1a25cd67b5d2e08287c957b1eb903ec"), HARD_REJECT)
+
+    def test_untagged_release_passes_minimum(self) -> None:
+        self.assertGreaterEqual(0, MIN_FORMAT_SCORE)
+        self.assertTrue(is_accepted([0]))
+
+    def test_bonuses_cannot_lift_a_hard_reject_over_minimum(self) -> None:
+        # X2 (2003) DTS-HD MA + HDR scored -9500 and was grabbed under min -9999.
+        require_floor_blocks_hard_reject_plus_bonus(MIN_FORMAT_SCORE)
+        x2 = score_release(
+            [HARD_REJECT, 500],
+            trash_ids=("dcf3ec6938fa32445f590a4da84256cd", "hdr-bonus"),
+        )
+        self.assertEqual(x2.total, -9500)
+        self.assertFalse(x2.accepted)
+        self.assertTrue(hard_reject_cannot_clear_floor([HARD_REJECT, 500]))
+        # Best live Radarr stack bonuses still cannot clear HARD_REJECT at floor 0.
+        self.assertTrue(
+            hard_reject_cannot_clear_floor([HARD_REJECT, 1800, 3000, 500, 20, 7])
+        )
+        self.assertFalse(hard_reject_cannot_clear_floor([HARD_REJECT, 500], minimum=-9999))
 
     def test_recyclarr_yaml_applies_every_scored_id(self) -> None:
         yml = (Path(__file__).resolve().parents[1] / "recyclarr" / "recyclarr.yml").read_text(
@@ -378,6 +404,7 @@ class PlaybackCompatTests(unittest.TestCase):
             for tid, score in score_map(app).items():
                 self.assertEqual(assigned_score(yml, tid), score, msg=tid)
         self.assertIn(f"min_format_score: {MIN_FORMAT_SCORE}", yml)
+        self.assertEqual(MIN_FORMAT_SCORE, 0)
 
 
 class MainCliTests(unittest.TestCase):
