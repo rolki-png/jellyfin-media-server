@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Scan qBittorrent download folders and auto-import via Radarr/Sonarr manual import API.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

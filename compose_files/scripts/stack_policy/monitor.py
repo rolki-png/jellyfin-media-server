@@ -1,5 +1,3 @@
-"""Stack problems as stable keys, so alerts fire on change instead of every tick."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -72,5 +70,4 @@ def diff(previous: set[str], current: dict[str, str]) -> tuple[dict[str, str], s
 
 
 def restart_targets(new: dict[str, str]) -> list[str]:
-    """Docker only reports unhealthy; restart once per transition, not every tick."""
     return sorted(k.split(":", 1)[1] for k in new if k.startswith("unhealthy:"))

@@ -1,8 +1,5 @@
 # shellcheck shell=bash
 # Load KEY=VAL from $1 into the current shell without `source` (keeps `&`).
-# Usage from a sibling script:
-#   # shellcheck source=load-dotenv.sh
-#   source "${SCRIPT_DIR}/load-dotenv.sh" "${ENV_FILE}"
 _dotenv_file=${1:?dotenv path required}
 _dotenv_scripts="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 eval "$(

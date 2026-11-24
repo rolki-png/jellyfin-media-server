@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Apply desktop idle policy from Plex sessions (Omarchy stay-awake + DPMS + power profile).
-
-Xbox Direct Play hitches if this host locks or power-saves. Stay-awake blocks
-Omarchy lock/screensaver; hyprctl DPMS blanks the PC monitor during remote
-playback once you are idle. power-saver only after 15 minutes with no Plex.
-"""
 from __future__ import annotations
 
 import os

@@ -1,9 +1,3 @@
-"""Hardlink-safe *arr volume layout.
-
-Radarr/Sonarr must see library + downloads as one filesystem (COMMON_PATH).
-Separate /movies, /tv, or /downloads binds cause EXDEV and copies.
-"""
-
 from __future__ import annotations
 
 FORBIDDEN_VOLUME_TARGETS = frozenset({"/movies", "/tv", "/downloads"})
@@ -39,7 +33,6 @@ def _volume_parts(entry: object) -> tuple[str, str]:
 
 
 def check_arr_volumes(service: str, volumes: list[object] | None) -> list[str]:
-    """Return error strings if *arr volumes break hardlinks."""
     errors: list[str] = []
     vols = volumes or []
     sources: list[str] = []
@@ -60,7 +53,6 @@ def check_arr_volumes(service: str, volumes: list[object] | None) -> list[str]:
 
 
 def _pool_prefixes(services: dict) -> list[str]:
-    """Identity binds (source == target) are the media pool, not appdata."""
     prefixes: list[str] = []
     for svc in services.values():
         if not isinstance(svc, dict):
@@ -73,7 +65,6 @@ def _pool_prefixes(services: dict) -> list[str]:
 
 
 def check_config_off_pool(service: str, volumes: list[object] | None, pool_prefixes: list[str]) -> list[str]:
-    """SQLite /config must not live under a pool identity bind's configs/ tree."""
     errors: list[str] = []
     if not pool_prefixes:
         return errors
@@ -101,12 +92,6 @@ def check_config_off_pool(service: str, volumes: list[object] | None, pool_prefi
 
 
 def check_plex_local_image(service: str, svc: dict) -> list[str]:
-    """A locally built plex image must stay off watchtower.
-
-    Watchtower pulls by tag and would replace the Freeloader-patched local
-    image with upstream lscr.io/linuxserver/plex, silently dropping the
-    feature-unlock .so. Plex updates are rebuilds (build-freeloader-plex.sh).
-    """
     svc = svc or {}
     image = str(svc.get("image") or "")
     if not image.startswith(LOCAL_PLEX_IMAGE):
@@ -121,7 +106,6 @@ def check_plex_local_image(service: str, svc: dict) -> list[str]:
 
 
 def check_compose_doc(data: dict) -> list[str]:
-    """Check rendered compose JSON/YAML mapping for radarr and sonarr."""
     services = data.get("services") or {}
     errors: list[str] = []
     pools = _pool_prefixes(services)

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-# Pause at share limit instead of Remove — global ratio/time stay disabled,
-# but a later UI toggle must not delete the torrent from the client.
 _PAUSE_TORRENT = 0
 
 

@@ -12,12 +12,8 @@ import re
 
 HARD_REJECT = -10000
 PREFERRED = 100
-# Every negative score is HARD_REJECT, so untagged 4K WEB scores >= 0 and passes.
-# A minimum just above HARD_REJECT let bonuses lift rejects over it: X2 grabbed
-# DTS-HD MA + HDR at -9500 under -9999. At 0, bonuses must reach +10000 first.
 MIN_FORMAT_SCORE = 0
 
-# TRaSH Guides trash_ids (Radarr vs Sonarr catalogs differ).
 _RADARR = {
     "TrueHD ATMOS": "496f355514737f7d83bf7aa4d24f8169",
     "TrueHD": "3cafb66171b47f226146a0770576870f",
@@ -68,9 +64,7 @@ def score_for(app: str, trash_id: str) -> int:
 
 
 def score_map(app: str) -> dict[str, int]:
-    """Every TRaSH id this playback target scores, mapped to HARD_REJECT or PREFERRED."""
     return {tid: score_for(app, tid) for tid in _catalog(app).values()}
-
 
 def assigned_score(yml: str, trash_id: str) -> int:
     idx = yml.index(trash_id)

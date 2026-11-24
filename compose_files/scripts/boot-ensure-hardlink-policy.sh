@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Called from media-server.service ExecStartPost.
-# Waits for Radarr/Sonarr, then re-applies hardlink/seeding/Connect settings so
-# policy survives reboot, docker restart, and accidental UI drift.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +17,6 @@ SONARR_CONFIG="${APPDATA_PATH}/sonarr/config.xml"
 
 log() { echo "boot-ensure-hardlink-policy: $*" >&2; }
 
-# Disk / mergerfs sanity (fail loud so journald shows why policy could not apply).
 for p in "${COMMON_PATH}" \
          "${APPDATA_PATH}" \
          "${SAME_DISK_SSD_ROOT:-/mnt/samsung-media/Isyrr}" \
@@ -31,7 +27,6 @@ for p in "${COMMON_PATH}" \
   fi
 done
 
-# Downloads must NOT be a separate bind mount (SSD pin breaks HDD-first + hardlinks).
 if findmnt -n "${COMMON_PATH}/qbittorrent/downloads" >/dev/null 2>&1; then
   src="$(findmnt -n -o SOURCE "${COMMON_PATH}/qbittorrent/downloads" || true)"
   log "ERROR: ${COMMON_PATH}/qbittorrent/downloads is a separate mount (${src})"

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Tests at the stack_policy interface (stdlib unittest)."""
 
 from __future__ import annotations
 
@@ -382,8 +381,6 @@ class ProfileNameTests(unittest.TestCase):
 
 
 class PlaybackCompatTests(unittest.TestCase):
-    """Xbox Series X MKV Direct Play + Samsung U8000F HDMI decode."""
-
     def test_truehd_and_dts_are_hard_rejects(self) -> None:
         self.assertEqual(score_for("radarr", "496f355514737f7d83bf7aa4d24f8169"), HARD_REJECT)
         self.assertEqual(score_for("radarr", "dcf3ec6938fa32445f590a4da84256cd"), HARD_REJECT)
@@ -404,7 +401,6 @@ class PlaybackCompatTests(unittest.TestCase):
         self.assertTrue(is_accepted([0]))
 
     def test_bonuses_cannot_lift_a_hard_reject_over_minimum(self) -> None:
-        # X2 (2003) DTS-HD MA + HDR scored -9500 and was grabbed under min -9999.
         require_floor_blocks_hard_reject_plus_bonus(MIN_FORMAT_SCORE)
         x2 = score_release(
             [HARD_REJECT, 500],
@@ -413,7 +409,6 @@ class PlaybackCompatTests(unittest.TestCase):
         self.assertEqual(x2.total, -9500)
         self.assertFalse(x2.accepted)
         self.assertTrue(hard_reject_cannot_clear_floor([HARD_REJECT, 500]))
-        # Best live Radarr stack bonuses still cannot clear HARD_REJECT at floor 0.
         self.assertTrue(
             hard_reject_cannot_clear_floor([HARD_REJECT, 1800, 3000, 500, 20, 7])
         )
@@ -768,7 +763,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 class PublicTreeLocksTests(unittest.TestCase):
     """Keep host identity and junk files out of the public tree (issues #5–#7, #11)."""
 
-    # Patterns are split so this file does not match its own detectors.
     _DOC_IPV4 = re.compile(
         r"192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|<lan-ip>|100\.64\.0\.0/10"
     )
@@ -833,7 +827,6 @@ class PublicTreeLocksTests(unittest.TestCase):
                     window = line[max(0, match.start() - 8) : match.end() + 12]
                     if self._DOC_IPV4.search(window) or self._DOC_IPV4.search(line):
                         continue
-                    # Documentation ranges only; a bare RFC1918 192.168 is a live-LAN leak.
                     leaks.append(f"{path}:{i}: live LAN {match.group(0)}")
         self.assertEqual(leaks, [], "host identity leaked:\n" + "\n".join(leaks))
 
@@ -904,7 +897,6 @@ fi
         self.assertIn("PLEX_TRANSCODE_DIR", proc.stderr)
 
     def test_validate_rejects_transcode_on_media_pool_parent(self) -> None:
-        # .env.example COMMON_PATH=/srv/media/isyrr → pool is /srv/media (AGENTS.md).
         proc = self._validate_ci("/srv/media/transcode")
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("PLEX_TRANSCODE_DIR", proc.stderr)

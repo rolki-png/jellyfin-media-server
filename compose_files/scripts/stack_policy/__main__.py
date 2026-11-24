@@ -1,5 +1,3 @@
-"""CLI for bash callers. Stdin/stdout JSON or files. No third-party deps."""
-
 from __future__ import annotations
 
 import argparse

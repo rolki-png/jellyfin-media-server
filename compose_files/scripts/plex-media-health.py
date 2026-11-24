@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Exit 1 if Plex library media files are missing or unreadable."""
 import os
 import sqlite3
 import sys

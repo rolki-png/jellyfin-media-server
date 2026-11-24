@@ -334,7 +334,6 @@ def scrobble_from_metadata(meta: Mapping[str, object], *, username: str) -> dict
 
 
 def replay_empty_watched_webhooks(call, post: Callable[[str, dict], object], webhook: str) -> int:
-    """Re-POST watched events Tautulli sent with an empty body (failed template)."""
     logs = call("get_notification_log", {"length": "1000"}) or {}
     rows = logs.get("data") if isinstance(logs, Mapping) else logs
     sent = 0

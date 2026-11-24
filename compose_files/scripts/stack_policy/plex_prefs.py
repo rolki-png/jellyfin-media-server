@@ -1,5 +1,3 @@
-"""Plex Preferences.xml mutations for stream-safe host settings."""
-
 from __future__ import annotations
 
 import re
